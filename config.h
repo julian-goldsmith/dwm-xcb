@@ -36,7 +36,12 @@ static const Layout layouts[] = {
 };
 
 /* key definitions */
-#define MODKEY XCB_MOD_MASK_4
+#ifdef DEBUG
+	#define MODKEY XCB_MOD_MASK_4		// during debugging, use the Windows key instead of alt
+#else
+	#define MODKEY XCB_MOD_MASK_2		// MOD_MASK_2 is alt, if I remember correctly
+#endif
+
 #define TAGKEYS(KEY,TAG) \
 	{ MODKEY,                       KEY,      view,           {.ui = 1 << TAG} }, \
 	{ MODKEY|XCB_MOD_MASK_CONTROL,  KEY,      toggleview,     {.ui = 1 << TAG} }, \

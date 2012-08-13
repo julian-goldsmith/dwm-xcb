@@ -1051,7 +1051,7 @@ long getstate(xcb_window_t w) {		// FIXME: why does this return long?
 	xcb_ewmh_get_wm_state_reply(&ewmh, cookie, &state, &err);
 	testErr();
 
-	result = (long)state.atoms[0]
+	result = (long)state.atoms[0];
 
 	xcb_ewmh_connection_wipe(&ewmh);
 	return result;
