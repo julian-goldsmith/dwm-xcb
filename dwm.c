@@ -40,6 +40,7 @@
 #include <xcb/xcb_atom.h>
 #include <xcb/xcb_aux.h>
 #include <xcb/xcb_ewmh.h>
+#include <xcb/xcb_event.h>
 #include <assert.h>
 #include <stdbool.h>
 
@@ -297,9 +298,8 @@ static void _testErr(const char* file, const int line)
 {
 	if(err)
 	{
-		// FIXME: xcb_event_get_error_label no longer exists
 		fprintf(stderr, "%s:%d - request returned error %i, \"%s\"\n", file, line,
-			(int)err->error_code, /*xcb_event_get_error_label(err->error_code)*/ "");
+			(int)err->error_code, xcb_event_get_error_label(err->error_code));
 		free(err);
 		err = NULL;
 		assert(0);
@@ -555,8 +555,8 @@ void cleanup(void) {
 	xcb_free_cursor(conn, cursor[CurMove]);
 
 	// FIXME: this double-cast nastiness brought to you by strict aliasing
-	xcb_free_colors(conn, xscreen->default_colormap, 0, ColLast, (const uint32_t*)(const void*)&dc.norm);
-	xcb_free_colors(conn, xscreen->default_colormap, 0, ColLast, (const uint32_t*)(const void*)&dc.sel);
+	xcb_free_colors(conn, xscreen->default_colormap, 0, ColLast, /*(const uint32_t*)(const void*)&*/dc.norm);
+	xcb_free_colors(conn, xscreen->default_colormap, 0, ColLast, /*(const uint32_t*)(const void*)&*/dc.sel);
 
 	while(mons)
 		cleanupmon(mons);
@@ -1059,7 +1059,10 @@ long getstate(xcb_window_t w) {		// FIXME: why does this return long?
 
 bool gettextprop(xcb_window_t w, xcb_atom_t atom, char *text, unsigned int size) {
 	xcb_icccm_get_text_property_reply_t reply;
-	xcb_icccm_get_text_property_reply(conn, xcb_icccm_get_text_property(conn, w, atom), &reply, &err);
+	if(!xcb_icccm_get_text_property_reply(conn, xcb_icccm_get_text_property(conn, w, atom), &reply, &err))
+	{
+		return false;
+	}
 
 	//testErr();		// FIXME: we don't use errors.  why?
 	if(err)
