@@ -17,11 +17,11 @@ PKGLIST = xcb-aux xcb-ewmh xcb-icccm xcb-keysyms xcb
 
 # flags
 CPPFLAGS = -DVERSION=\"${VERSION}\" 
-CFLAGS = -std=c99 `pkg-config --cflags ${PKGLIST}` ${CPPFLAGS}
+CFLAGS = -std=c11 `pkg-config --cflags ${PKGLIST}` ${CPPFLAGS}
 LDFLAGS = `pkg-config --libs ${PKGLIST}`
 
 ifeq ($(strip $(DEBUG)),1)				# FIXME: why do we have to strip this?
-  CFLAGS += -g3 -pedantic -Wall -O0 -DDEBUG
+  CFLAGS += -g3 -pedantic -Wall -O0 -DDEBUG -Werror
   LDFLAGS += -g
 else
   CFLAGS += -O3

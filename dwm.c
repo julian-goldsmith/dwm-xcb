@@ -35,7 +35,6 @@
 #include <X11/keysym.h>
 #include <xcb/xcb.h>
 #include <xcb/xcb_keysyms.h>
-//#include <xcb/xcb_property.h>
 #include <xcb/xcb_icccm.h>
 #include <xcb/xcb_atom.h>
 #include <xcb/xcb_aux.h>
@@ -193,7 +192,7 @@ static void focusmon(const Arg *arg);
 static void focusstack(const Arg *arg);
 static uint32_t getcolor(const char *colstr);
 static bool getrootptr(int *x, int *y);
-static long getstate(xcb_window_t w);
+static xcb_atom_t getstate(xcb_window_t w);
 static bool gettextprop(xcb_window_t w, xcb_atom_t atom, char *text, unsigned int size);
 static void grabbuttons(Client *c, bool focused);
 static void grabkeys(void);
@@ -294,7 +293,7 @@ static const handler_func_t handler_funs[] = {
 /* compile-time check if all tags fit into an unsigned int bit array. */
 struct NumTags { char limitexceeded[LENGTH(tags) > 31 ? -1 : 1]; };
 
-static void _testErr(const char* file, const int line)
+static void _testerr(const char* file, const int line)
 {
 	if(err)
 	{
@@ -306,15 +305,15 @@ static void _testErr(const char* file, const int line)
 	}
 }
 
-#define testErr() _testErr(__FILE__, __LINE__);
+#define testerr() _testerr(__FILE__, __LINE__);
 
-static void _testCookie(xcb_void_cookie_t cookie, const char* file, const int line)
+static void _testcookie(xcb_void_cookie_t cookie, const char* file, const int line)
 {
 	err = xcb_request_check(conn, cookie);
-	_testErr(file, line);
+	_testerr(file, line);
 }
 
-#define testCookie(cookie) _testCookie(cookie, __FILE__, __LINE__);
+#define testcookie(cookie) _testcookie(cookie, __FILE__, __LINE__);
 
 static void* malloc_safe(size_t size)
 {
@@ -325,27 +324,29 @@ static void* malloc_safe(size_t size)
 	return ret;
 }
 
-// FIXME: remove this or something
+// FIXME: this was removed, why?
 static void clearevent(int response_type)
 {
-/*
 	xcb_generic_event_t *ev;
 
-	do
+	while((ev = xcb_poll_for_event(conn)))
 	{
-		ev = xcb_poll_for_event(conn);
-		if(!ev) break;
 		if(ev->response_type == response_type)
 		{
 			free(ev);
 			break;
 		}
 		else
-			xcb_event_handle(handlers, ev);
+		{
+			for(const handler_func_t* handler = handler_funs; handler->func != NULL; handler++)
+			{
+				if((ev->response_type & ~0x80) == handler->request)
+					handler->func(ev);
+			}	
+		}
 			
 		free(ev);
-	} while(1);
-*/
+	}
 }
 
 /* function implementations */
@@ -381,7 +382,7 @@ void applyrules(Client *c) {
 		xcb_icccm_get_wm_class_reply_wipe(&class_reply);
 	}
 	else
-		testErr();
+		testerr();
 
 	c->tags = c->tags & TAGMASK ? c->tags & TAGMASK : c->mon->tagset[c->mon->seltags];
 }
@@ -554,9 +555,8 @@ void cleanup(void) {
 	xcb_free_cursor(conn, cursor[CurResize]);
 	xcb_free_cursor(conn, cursor[CurMove]);
 
-	// FIXME: this double-cast nastiness brought to you by strict aliasing
-	xcb_free_colors(conn, xscreen->default_colormap, 0, ColLast, /*(const uint32_t*)(const void*)&*/dc.norm);
-	xcb_free_colors(conn, xscreen->default_colormap, 0, ColLast, /*(const uint32_t*)(const void*)&*/dc.sel);
+	xcb_free_colors(conn, xscreen->default_colormap, 0, ColLast, dc.norm);
+	xcb_free_colors(conn, xscreen->default_colormap, 0, ColLast, dc.sel);
 
 	while(mons)
 		cleanupmon(mons);
@@ -659,7 +659,7 @@ int configurerequest(xcb_generic_event_t *e) {
 			if(ISVISIBLE(c))
 			{
 				uint32_t values[] = { c->x, c->y, c->w, c->h };
-				testCookie(xcb_configure_window_checked(conn, c->win, XCB_CONFIG_WINDOW_X |
+				testcookie(xcb_configure_window_checked(conn, c->win, XCB_CONFIG_WINDOW_X |
 					XCB_CONFIG_WINDOW_Y | XCB_CONFIG_WINDOW_WIDTH |
 					XCB_CONFIG_WINDOW_HEIGHT, values));
 			}
@@ -980,7 +980,7 @@ uint32_t getcolor(const char *colstr)
 		}
 		else
 		{
-			testErr();
+			testerr();
 			pixel = xscreen->black_pixel;
 		}
 	}
@@ -996,7 +996,7 @@ uint32_t getcolor(const char *colstr)
 		}
 		else
 		{
-			testErr();
+			testerr();
 			pixel = xscreen->black_pixel;
 		}
 	}
@@ -1006,7 +1006,7 @@ uint32_t getcolor(const char *colstr)
 
 bool getrootptr(int *x, int *y) {
 	xcb_query_pointer_reply_t *reply = xcb_query_pointer_reply(conn, xcb_query_pointer(conn, root), &err);
-	testErr();
+	testerr();
 
 	*x = reply->root_x;
 	*y = reply->root_y;
@@ -1016,44 +1016,26 @@ bool getrootptr(int *x, int *y) {
 	return true;
 }
 
-long getstate(xcb_window_t w) {		// FIXME: why does this return long?
-	long result = -1;
+xcb_atom_t getstate(xcb_window_t w) {
+	xcb_atom_t result = -1;
 
-	printf("getstate");
+	xcb_get_property_cookie_t cookie = xcb_get_property(conn, 0, 
+		w, wmatom[WMState], XCB_ATOM_ATOM, 0, 0);
+	xcb_get_property_reply_t *reply = xcb_get_property_reply(conn, cookie, &err);
+	testerr();
 
-	// FIXME: make this work
-/*
-	xcb_get_property_reply_t *reply = xcb_get_property_reply(conn,
-		xcb_icccm_get_any_property(conn, 0, w, wmatom[WMState], sizeof(xcb_atom_t)), &err);
-	testErr();
-
-	if(!reply) return -1;
+	if(!reply) 
+		return -1;
 	
-	if(!reply->length || reply->type != XCB_ATOM_ATOM)
+	if(!xcb_get_property_value_length(reply))
 	{
 		free(reply);
 		return -1;
 	}
 
-	p = (xcb_atom_t*)xcb_get_property_value(reply);
-	result = (long)*p;
+	result = (xcb_atom_t*)xcb_get_property_value(reply);
 	free(p);
 	free(reply);
-	return result;*/
-	// ewmh stuff?
-	xcb_ewmh_connection_t ewmh;
-	xcb_intern_atom_cookie_t *cookies = xcb_ewmh_init_atoms(conn, &ewmh);
-	xcb_ewmh_init_atoms_replies(&ewmh, cookies, &err);
-	testErr();
-
-	xcb_get_property_cookie_t cookie = xcb_ewmh_get_wm_state(&ewmh, w);
-	xcb_ewmh_get_atoms_reply_t state;
-	xcb_ewmh_get_wm_state_reply(&ewmh, cookie, &state, &err);
-	testErr();
-
-	result = (long)state.atoms[0];
-
-	xcb_ewmh_connection_wipe(&ewmh);
 	return result;
 }
 
@@ -1064,7 +1046,7 @@ bool gettextprop(xcb_window_t w, xcb_atom_t atom, char *text, unsigned int size)
 		return false;
 	}
 
-	//testErr();		// FIXME: we don't use errors.  why?
+	//testerr();		// FIXME: we don't use errors.  why?
 	if(err)
 	{
 		free(err);
@@ -1124,10 +1106,10 @@ void grabkeys(void)
 
 void initfont(const char *fontstr) {
 	dc.font.xfont = xcb_generate_id(conn);
-	testCookie(xcb_open_font_checked(conn, dc.font.xfont, strlen(fontstr), fontstr));
+	testcookie(xcb_open_font_checked(conn, dc.font.xfont, strlen(fontstr), fontstr));
 	
 	xcb_query_font_reply_t *fontreply = xcb_query_font_reply(conn, xcb_query_font(conn, dc.font.xfont), &err);
-	testErr();
+	testerr();
 
 	dc.font.ascent = fontreply->font_ascent;
 	dc.font.descent = fontreply->font_descent;
@@ -1169,10 +1151,14 @@ int keypress(xcb_generic_event_t *e) {
 
 	keysym = xcb_key_press_lookup_keysym(syms, ev, 0);
 	for(i = 0; i < LENGTH(keys); i++)
+	{
 		if(keysym == keys[i].keysym
-		&& CLEANMASK(keys[i].mod) == CLEANMASK(ev->state)
-		&& keys[i].func)
+		   && CLEANMASK(keys[i].mod) == CLEANMASK(ev->state)
+		   && keys[i].func)
+		{
 			keys[i].func(&(keys[i].arg));
+		}
+	}
 
 	return 0;
 }
@@ -1191,14 +1177,13 @@ void killclient(const Arg *arg) {
 		ev.type = wmatom[WMProtocols];
 		xcb_send_event(conn, false, selmon->sel->win, 
 			XCB_EVENT_MASK_NO_EVENT, (const char*)&ev);
-	}
-	else {
+	} else {
 		xcb_grab_server(conn);
 		xcb_set_close_down_mode(conn, XCB_CLOSE_DOWN_DESTROY_ALL);
 		xcb_kill_client(conn, selmon->sel->win);
-		xcb_flush(conn);
 		xcb_ungrab_server(conn);
 	}
+	xcb_flush(conn);
 }
 
 void manage(xcb_window_t w)
@@ -1214,7 +1199,7 @@ void manage(xcb_window_t w)
 	
 	xcb_window_t trans_reply = XCB_NONE;
 	xcb_icccm_get_wm_transient_for_reply(conn, xcb_icccm_get_wm_transient_for(conn, w), &trans_reply, &err);
-	testErr();
+	testerr();
 
 	if(trans_reply != XCB_NONE)
 		t = wintoclient(trans_reply);
@@ -1229,7 +1214,7 @@ void manage(xcb_window_t w)
 
 	/* geometry */
 	xcb_get_geometry_reply_t *geom_reply = xcb_get_geometry_reply(conn, geom_cookie, &err);
-	testErr();
+	testerr();
 	c->x = c->oldx = geom_reply->x + c->mon->wx;
 	c->y = c->oldy = geom_reply->y + c->mon->wy;
 	c->w = c->oldw = geom_reply->width;
@@ -1289,7 +1274,7 @@ int maprequest(xcb_generic_event_t *e) {
 
 	xcb_get_window_attributes_reply_t *ga_reply =
 		xcb_get_window_attributes_reply(conn, xcb_get_window_attributes(conn, ev->window), &err);
-	testErr();
+	testerr();
 
 	if(!ga_reply)
 		return 0;
@@ -1412,7 +1397,7 @@ int propertynotify(xcb_generic_event_t *e) {
 			xcb_window_t trans = XCB_NONE;
 			xcb_get_property_cookie_t cookie = xcb_icccm_get_wm_transient_for(conn, c->win);
 			xcb_get_property_reply_t* reply = xcb_get_property_reply(conn, cookie, &err);
-			testErr();
+			testerr();
 			xcb_icccm_get_wm_transient_for_from_reply(&trans, reply);
 
 			if(trans != XCB_NONE && !c->isfloating && (c->isfloating = (wintoclient(trans) != NULL)))
@@ -1601,14 +1586,14 @@ void scan(void) {
 	for(i = 0; i < num; i++) {
 		xcb_get_window_attributes_reply_t *ga_reply =
 			xcb_get_window_attributes_reply(conn, xcb_get_window_attributes(conn, wins[i]), &err);
-		testErr();
+		testerr();
 
 		if(ga_reply->override_redirect) 
 			continue;
 
 		xcb_window_t trans_reply = XCB_NONE;
 		xcb_icccm_get_wm_transient_for_reply(conn, xcb_icccm_get_wm_transient_for(conn, wins[i]), &trans_reply, &err);
-		testErr();
+		testerr();
 		
 		if(trans_reply != XCB_NONE)
 			continue;
@@ -1622,11 +1607,11 @@ void scan(void) {
 	for(i = 0; i < num; i++) { /* now the transients */
 		xcb_get_window_attributes_reply_t *ga_reply =
 			xcb_get_window_attributes_reply(conn, xcb_get_window_attributes(conn, wins[i]), &err);
-		testErr();
+		testerr();
 
 		xcb_window_t trans_reply = XCB_NONE;
 		xcb_icccm_get_wm_transient_for_reply(conn, xcb_icccm_get_wm_transient_for(conn, wins[i]), &trans_reply, &err);
-		testErr();
+		testerr();
 
 		if(trans_reply != XCB_NONE && (ga_reply->map_state == XCB_MAP_STATE_VIEWABLE
 		   || getstate(wins[i]) == XCB_ICCCM_WM_STATE_ICONIC))
@@ -1691,15 +1676,16 @@ static const struct
 {
 	const char* name;
 	int number;
+	bool isnet;
 } setup_atoms[SETUP_NUM_ATOMS] = 
 {
-	{ "WM_PROTOCOLS",  WMProtocols },
-	{ "WM_DELETE_WINDOW", WMDelete },
-	{ "WM_STATE", WMState }, 
-	{ "_NET_SUPPORTED", NetSupported },
-	{ "_NET_WM_NAME", NetWMName },
-	{ "_NET_WM_STATE", NetWMState },
-	{ "_NET_WM_STATE_FULLSCREEN", NetWMFullscreen }
+	{ "WM_PROTOCOLS",  WMProtocols, false },
+	{ "WM_DELETE_WINDOW", WMDelete, false },
+	{ "WM_STATE", WMState, false }, 
+	{ "_NET_SUPPORTED", NetSupported, true },
+	{ "_NET_WM_NAME", NetWMName, true },
+	{ "_NET_WM_STATE", NetWMState, true },
+	{ "_NET_WM_STATE_FULLSCREEN", NetWMFullscreen, true }
 };
 
 void setup(void)
@@ -1728,11 +1714,14 @@ void setup(void)
 
 		if((reply = xcb_intern_atom_reply(conn, atom_cookie[i], &err)))
 		{
-			wmatom[setup_atoms[i].number] = reply->atom;
+			if(setup_atoms[i].isnet)
+				netatom[setup_atoms[i].number] = reply->atom;
+			else
+				wmatom[setup_atoms[i].number] = reply->atom;
 			free(reply);
 		}
 		else
-			testErr();
+			testerr();
 	}
 
 	/* init cursors */
@@ -1781,7 +1770,7 @@ void setup(void)
 		XCB_EVENT_MASK_PROPERTY_CHANGE,
 		cursor[CurNormal]
 	};
-	testCookie(xcb_change_window_attributes_checked(conn, root, XCB_CW_EVENT_MASK | XCB_CW_CURSOR, cw_values));
+	testcookie(xcb_change_window_attributes_checked(conn, root, XCB_CW_EVENT_MASK | XCB_CW_CURSOR, cw_values));
 
 	syms = xcb_key_symbols_alloc(conn);
 	grabkeys();
@@ -1847,7 +1836,7 @@ int textnw(const char *text, unsigned int len) {
 		text_copy[i].byte2 = text[i];
 	xcb_query_text_extents_reply_t *reply = xcb_query_text_extents_reply(conn,	// FIXME: we should probably use iconv or something instead of casting
 		xcb_query_text_extents(conn, dc.gc, len, text_copy), &err);
-	testErr();
+	testerr();
 	free(reply);
 	return reply->overall_width;
 }
@@ -2072,7 +2061,7 @@ void updatenumlockmask(void)
 	/* taken from i3 */
 	xcb_get_modifier_mapping_reply_t* reply =
 		xcb_get_modifier_mapping_reply(conn, xcb_get_modifier_mapping(conn), &err);
-	testErr();
+	testerr();
 	xcb_keycode_t *codes = xcb_get_modifier_mapping_keycodes(reply);
 	xcb_keycode_t target, *temp;
 	unsigned int i, j;
@@ -2161,7 +2150,7 @@ void updatewmhints(Client *c) {
 
 	if(!xcb_icccm_get_wm_hints_reply(conn, xcb_icccm_get_wm_hints(conn, c->win), &wmh, &err))
 		return;
-	testErr();
+	testerr();
 
 	if(c == selmon->sel && wmh.flags & XCB_ICCCM_WM_HINT_X_URGENCY) {
 		wmh.flags &= ~XCB_ICCCM_WM_HINT_X_URGENCY;
