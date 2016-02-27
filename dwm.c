@@ -709,6 +709,7 @@ Monitor* createmon(void) {
 int destroynotify(xcb_generic_event_t *e) {
 	Client *c;
 	xcb_destroy_notify_event_t *ev = (xcb_destroy_notify_event_t*)e;
+	printf("destroynotify\n");
 
 	if((c = wintoclient(ev->window)))
 		unmanage(c, true);
@@ -1033,8 +1034,7 @@ xcb_atom_t getstate(xcb_window_t w) {
 		return -1;
 	}
 
-	result = (xcb_atom_t*)xcb_get_property_value(reply);
-	free(p);
+	result = *(xcb_atom_t*)xcb_get_property_value(reply);
 	free(reply);
 	return result;
 }
@@ -1046,10 +1046,9 @@ bool gettextprop(xcb_window_t w, xcb_atom_t atom, char *text, unsigned int size)
 		return false;
 	}
 
-	//testerr();		// FIXME: we don't use errors.  why?
 	if(err)
 	{
-		free(err);
+		testerr();
 		return false;
 	}
 
@@ -1153,8 +1152,8 @@ int keypress(xcb_generic_event_t *e) {
 	for(i = 0; i < LENGTH(keys); i++)
 	{
 		if(keysym == keys[i].keysym
-		   && CLEANMASK(keys[i].mod) == CLEANMASK(ev->state)
-		   && keys[i].func)
+		&& CLEANMASK(keys[i].mod) == CLEANMASK(ev->state)
+		&& keys[i].func)
 		{
 			keys[i].func(&(keys[i].arg));
 		}
@@ -1164,26 +1163,25 @@ int keypress(xcb_generic_event_t *e) {
 }
 
 void killclient(const Arg *arg) {
-	xcb_client_message_event_t ev;
-
 	if(!selmon->sel)
 		return;
 	if(isprotodel(selmon->sel)) {
+		xcb_client_message_event_t ev;
 		ev.response_type = XCB_CLIENT_MESSAGE;
 		ev.window = selmon->sel->win;
 		ev.format = 32;
 		ev.data.data32[0] = wmatom[WMDelete];
 		ev.data.data32[1] = XCB_TIME_CURRENT_TIME;
 		ev.type = wmatom[WMProtocols];
-		xcb_send_event(conn, false, selmon->sel->win, 
-			XCB_EVENT_MASK_NO_EVENT, (const char*)&ev);
+		testcookie(xcb_send_event_checked(conn, false, selmon->sel->win, 
+			XCB_EVENT_MASK_NO_EVENT, (const char*)&ev));
 	} else {
 		xcb_grab_server(conn);
 		xcb_set_close_down_mode(conn, XCB_CLOSE_DOWN_DESTROY_ALL);
 		xcb_kill_client(conn, selmon->sel->win);
 		xcb_ungrab_server(conn);
+		xcb_flush(conn);
 	}
-	xcb_flush(conn);
 }
 
 void manage(xcb_window_t w)
@@ -1275,6 +1273,8 @@ int maprequest(xcb_generic_event_t *e) {
 	xcb_get_window_attributes_reply_t *ga_reply =
 		xcb_get_window_attributes_reply(conn, xcb_get_window_attributes(conn, ev->window), &err);
 	testerr();
+
+	printf("map %i\n", ev->window);
 
 	if(!ga_reply)
 		return 0;
@@ -1761,8 +1761,8 @@ void setup(void)
 	/* select for events */
 	uint32_t cw_values[] = 
 	{ 
+		XCB_EVENT_MASK_SUBSTRUCTURE_NOTIFY | 
 		XCB_EVENT_MASK_SUBSTRUCTURE_REDIRECT | 
-		XCB_EVENT_MASK_SUBSTRUCTURE_NOTIFY |
 		XCB_EVENT_MASK_BUTTON_PRESS |
 		XCB_EVENT_MASK_ENTER_WINDOW |
 		XCB_EVENT_MASK_LEAVE_WINDOW |
@@ -1914,9 +1914,11 @@ void unfocus(Client *c, bool setfocus) {
 	if(!c)
 		return;
 	grabbuttons(c, false);
-	xcb_change_window_attributes(conn, c->win, XCB_CW_BORDER_PIXEL, (uint32_t*)&dc.norm[ColBorder]);
+	xcb_change_window_attributes(conn, c->win, XCB_CW_BORDER_PIXEL, 
+		(uint32_t*)&dc.norm[ColBorder]);
 	if(setfocus)
-		xcb_set_input_focus(conn, XCB_INPUT_FOCUS_POINTER_ROOT, c->win, XCB_CURRENT_TIME);
+		xcb_set_input_focus(conn, XCB_INPUT_FOCUS_POINTER_ROOT, 
+			c->win, XCB_CURRENT_TIME);
 }
 
 void unmanage(Client *c, bool destroyed) {
@@ -1925,11 +1927,14 @@ void unmanage(Client *c, bool destroyed) {
 	/* The server grab construct avoids race conditions. */
 	detach(c);
 	detachstack(c);
+	printf("unmanage %i, %i\n", destroyed, c->win);
 	if(!destroyed) {
 		uint32_t values[] = { c->oldbw };
 		xcb_grab_server(conn);
-		xcb_ungrab_button(conn, XCB_BUTTON_INDEX_ANY, c->win, XCB_GRAB_ANY);
-		xcb_configure_window(conn, c->win, XCB_CONFIG_WINDOW_BORDER_WIDTH, values);
+		xcb_configure_window_checked(conn, c->win, 
+			XCB_CONFIG_WINDOW_BORDER_WIDTH, values);
+		xcb_ungrab_button_checked(conn, XCB_BUTTON_INDEX_ANY, c->win, 
+			XCB_GRAB_ANY);
 		setclientstate(c, XCB_ICCCM_WM_STATE_WITHDRAWN);
 		xcb_flush(conn);
 		xcb_ungrab_server(conn);
@@ -1943,7 +1948,8 @@ int unmapnotify(xcb_generic_event_t *e) {
 	Client *c;
 	xcb_unmap_notify_event_t *ev = (xcb_unmap_notify_event_t*)e;
 
-	if((c = wintoclient(ev->event)))
+	printf("unmapnotify %i\n", ev->window);
+	if((c = wintoclient(ev->window)))
 		unmanage(c, false);
 
 	return 0;
@@ -2211,9 +2217,36 @@ void zoom(const Arg *arg) {
 	arrange(c->mon);
 }
 
-int main(int argc, char *argv[]) {
+void run(void) {
 	xcb_generic_event_t *event;
 
+	xcb_flush(conn);
+	
+	while((event = xcb_wait_for_event(conn)))
+	{
+		if(event->response_type == 0)
+		{
+			xcb_generic_error_t *error;
+
+			error = event;
+			fprintf(stderr, "previous request returned error %i, \"%s\" major code %i, minor code %i resource %i seq number %i\n",
+				(int)error->error_code, xcb_event_get_error_label(error->error_code),
+				(uint32_t) error->major_code, (uint32_t) error->minor_code,
+				(uint32_t) error->resource_id, (uint32_t) error->sequence);
+		} else {
+			for(const handler_func_t* handler = handler_funs; 
+				handler->func != NULL; handler++)
+			{
+				if((event->response_type & ~0x80) == handler->request)
+					handler->func(event);
+			}	
+		}
+
+		free(event);
+	}
+}
+
+int main(int argc, char *argv[]) {
 	signal(SIGINT, sigint);
 
 	if(argc == 2 && !strcmp("-v", argv[1]))
@@ -2232,16 +2265,8 @@ int main(int argc, char *argv[]) {
 	checkotherwm();
 	setup();
 	scan();
-	
-	while((event = xcb_wait_for_event(conn)))
-	{
-		for(const handler_func_t* handler = handler_funs; handler->func != NULL; handler++)
-		{
-			if((event->response_type & ~0x80) == handler->request)
-				handler->func(event);
-		}	
-		free(event);
-	}
+
+	run();
 
 	return 0;
 }

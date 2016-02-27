@@ -21,7 +21,7 @@ CFLAGS = -std=c11 `pkg-config --cflags ${PKGLIST}` ${CPPFLAGS}
 LDFLAGS = `pkg-config --libs ${PKGLIST}`
 
 ifeq ($(strip $(DEBUG)),1)				# FIXME: why do we have to strip this?
-  CFLAGS += -g3 -pedantic -Wall -O0 -DDEBUG -Werror
+  CFLAGS += -g3 -pedantic -Wall -O0 -DDEBUG
   LDFLAGS += -g
 else
   CFLAGS += -O3
