@@ -33,6 +33,10 @@ clean:
 	@echo cleaning
 	@rm -f dwm ${OBJ} dwm-${VERSION}.tar.gz
 
+strip: all
+	@echo stripping
+	@strip dwm
+
 dist: clean
 	@echo creating dist tarball
 	@mkdir -p dwm-${VERSION}
