@@ -43,10 +43,6 @@
 #include <assert.h>
 #include <stdbool.h>
 
-#ifdef XINERAMA
-#include <X11/extensions/Xinerama.h>
-#endif /* XINERAMA */
-
 /* macros */
 #define BUTTONMASK              (XCB_EVENT_MASK_BUTTON_PRESS|XCB_EVENT_MASK_BUTTON_RELEASE)
 #define CLEANMASK(mask)         (mask & ~(numlockmask|XCB_MOD_MASK_LOCK))
@@ -1131,18 +1127,6 @@ bool isprotodel(Client *c) {
 	return ret;
 }
 
-#ifdef XINERAMA
-static bool isuniquegeom(XineramaScreenInfo *unique, size_t len, XineramaScreenInfo *info) {
-	unsigned int i;
-
-	for(i = 0; i < len; i++)
-		if(unique[i].x_org == info->x_org && unique[i].y_org == info->y_org
-		&& unique[i].width == info->width && unique[i].height == info->height)
-			return false;
-	return true;
-}
-#endif /* XINERAMA */
-
 int keypress(xcb_generic_event_t *e) {
 	unsigned int i;
 	xcb_keysym_t keysym;
@@ -1983,78 +1967,16 @@ void updatebarpos(Monitor *m) {
 bool updategeom(void) {
 	bool dirty = false;
 
-#ifdef XINERAMA
-	if(XineramaIsActive(dpy)) {
-		int i, j, n, nn;
-		Client *c;
-		Monitor *m;
-		XineramaScreenInfo *info = XineramaQueryScreens(dpy, &nn);
-		XineramaScreenInfo *unique = NULL;
-
-		info = XineramaQueryScreens(dpy, &nn);
-		for(n = 0, m = mons; m; m = m->next, n++);
-		/* only consider unique geometries as separate screens */
-		if(!(unique = (XineramaScreenInfo *)malloc(sizeof(XineramaScreenInfo) * nn)))
-			die("fatal: could not malloc() %u bytes\n", sizeof(XineramaScreenInfo) * nn);
-		for(i = 0, j = 0; i < nn; i++)
-			if(isuniquegeom(unique, j, &info[i]))
-				memcpy(&unique[j++], &info[i], sizeof(XineramaScreenInfo));
-		XFree(info);
-		nn = j;
-		if(n <= nn) {
-			for(i = 0; i < (nn - n); i++) { /* new monitors available */
-				for(m = mons; m && m->next; m = m->next);
-				if(m)
-					m->next = createmon();
-				else
-					mons = createmon();
-			}
-			for(i = 0, m = mons; i < nn && m; m = m->next, i++)
-				if(i >= n
-				|| (unique[i].x_org != m->mx || unique[i].y_org != m->my
-				    || unique[i].width != m->mw || unique[i].height != m->mh))
-				{
-					dirty = true;
-					m->num = i;
-					m->mx = m->wx = unique[i].x_org;
-					m->my = m->wy = unique[i].y_org;
-					m->mw = m->ww = unique[i].width;
-					m->mh = m->wh = unique[i].height;
-					updatebarpos(m);
-				}
-		}
-		else { /* less monitors available nn < n */
-			for(i = nn; i < n; i++) {
-				for(m = mons; m && m->next; m = m->next);
-				while(m->clients) {
-					dirty = true;
-					c = m->clients;
-					m->clients = c->next;
-					detachstack(c);
-					c->mon = mons;
-					attach(c);
-					attachstack(c);
-				}
-				if(m == selmon)
-					selmon = mons;
-				cleanupmon(m);
-			}
-		}
-		free(unique);
-	}
-	else
-#endif /* XINERAMA */
 	/* default monitor setup */
-	{
-		if(!mons)
-			mons = createmon();
-		if(mons->mw != sw || mons->mh != sh) {
-			dirty = true;
-			mons->mw = mons->ww = sw;
-			mons->mh = mons->wh = sh;
-			updatebarpos(mons);
-		}
+	if(!mons)
+		mons = createmon();
+	if(mons->mw != sw || mons->mh != sh) {
+		dirty = true;
+		mons->mw = mons->ww = sw;
+		mons->mh = mons->wh = sh;
+		updatebarpos(mons);
 	}
+
 	if(dirty) {
 		selmon = mons;
 		selmon = wintomon(root);
