@@ -1,25 +1,6 @@
-/* See LICENSE file for copyright and license details.
- *
- * dynamic window manager is designed like any other X client as well. It is
- * driven through handling X events. In contrast to other X clients, a window
- * manager selects for SubstructureRedirectMask on the root window, to receive
- * events about window (dis-)appearance.  Only one X connection at a time is
- * allowed to select for this event mask.
- *
- * The event handlers of dwm are organized in an array which is accessed
- * whenever a new event has been fetched. This allows event dispatching
- * in O(1) time.
- *
- * Each child of the root window is called a client, except windows which have
- * set the override_redirect flag.  Clients are organized in a linked client
- * list on each monitor, the focus history is remembered through a stack list
- * on each monitor. Each client contains a bit array to indicate the tags of a
- * client.
- *
- * Keys and tagging rules are organized as arrays and defined in config.h.
- *
- * To understand everything else, start reading main().
- */
+/* See LICENSE file for copyright and license details.  */
+
+#include "dwm.h"
 
 #include <errno.h>
 #include <locale.h>
@@ -33,8 +14,6 @@
 #include <sys/wait.h>
 #include <X11/cursorfont.h>
 #include <X11/keysym.h>
-#include <xcb/xcb.h>
-#include <xcb/xcb_keysyms.h>
 #include <xcb/xcb_icccm.h>
 #include <xcb/xcb_atom.h>
 #include <xcb/xcb_aux.h>
@@ -43,146 +22,27 @@
 #include <assert.h>
 #include <stdbool.h>
 
-/* macros */
-#define BUTTONMASK              (XCB_EVENT_MASK_BUTTON_PRESS|XCB_EVENT_MASK_BUTTON_RELEASE)
-#define CLEANMASK(mask)         (mask & ~(numlockmask|XCB_MOD_MASK_LOCK))
-#define INRECT(X,Y,RX,RY,RW,RH) ((X) >= (RX) && (X) < (RX) + (RW) && (Y) >= (RY) && (Y) < (RY) + (RH))
-#define ISVISIBLE(C)            ((C->tags & C->mon->tagset[C->mon->seltags]))
-#define LENGTH(X)               (sizeof X / sizeof X[0])
-#define MAX(A, B)               ((A) > (B) ? (A) : (B))
-#define MIN(A, B)               ((A) < (B) ? (A) : (B))
-#define MOUSEMASK               (BUTTONMASK|XCB_EVENT_MASK_POINTER_MOTION)
-#define WIDTH(X)                ((X)->w + 2 * (X)->bw)
-#define HEIGHT(X)               ((X)->h + 2 * (X)->bw)
-#define TAGMASK                 ((1 << LENGTH(tags)) - 1)
-#define TEXTW(X)                (textnw(X, strlen(X)) + dc.font.height)
-
-/* enums */
-enum { CurNormal, CurResize, CurMove, CurLast };        /* cursor */
-enum { ColBorder, ColFG, ColBG, ColLast };              /* color */
-enum { NetSupported, NetWMName, NetWMState,
-       NetWMFullscreen, NetLast };                      /* EWMH atoms */
-enum { WMProtocols, WMDelete, WMState, WMLast };        /* default atoms */
-enum { ClkTagBar, ClkLtSymbol, ClkStatusText, ClkWinTitle,
-       ClkClientWin, ClkRootWin, ClkLast };             /* clicks */
-
-typedef union {
-	int i;
-	unsigned int ui;
-	float f;
-	const void *v;
-} Arg;
-
-typedef struct {
-	unsigned int click;
-	unsigned int mask;
-	unsigned int button;
-	void (*func)(const Arg *arg);
-	const Arg arg;
-} Button;
-
-typedef struct Monitor Monitor;
-typedef struct Client Client;
-struct Client {
-	char name[256];
-	float mina, maxa;
-	int x, y, w, h;
-	int oldx, oldy, oldw, oldh;
-	int basew, baseh, incw, inch, maxw, maxh, minw, minh;
-	int bw, oldbw;
-	unsigned int tags;
-	bool isfixed, isfloating, isurgent, oldstate;
-	Client *next;
-	Client *snext;
-	Monitor *mon;
-	xcb_window_t win;
-};
-
-typedef struct {
-	int x, y, w, h;
-	uint32_t norm[ColLast];
-	uint32_t sel[ColLast];
-	xcb_gcontext_t gc;
-	struct {
-		int ascent;
-		int descent;
-		int height;
-		xcb_font_t xfont;
-		bool set;
-	} font;
-} DC; /* draw context */
-
-typedef struct {
-	unsigned int mod;
-	xcb_keysym_t keysym;
-	void (*func)(const Arg *);
-	const Arg arg;
-} Key;
-
-typedef struct {
-	const char *symbol;
-	void (*arrange)(Monitor *);
-} Layout;
-
-struct Monitor {
-	char ltsymbol[16];
-	float mfact;
-	int num;
-	int by;               /* bar geometry */
-	int mx, my, mw, mh;   /* screen size */
-	int wx, wy, ww, wh;   /* window area  */
-	unsigned int seltags;
-	unsigned int sellt;
-	unsigned int tagset[2];
-	bool showbar;
-	bool topbar;
-	Client *clients;
-	Client *sel;
-	Client *stack;
-	Monitor *next;
-	xcb_window_t barwin;
-	const Layout *lt[2];
-};
-
-typedef struct {
-	const char *class;
-	const char *instance;
-	const char *title;
-	unsigned int tags;
-	bool isfloating;
-	int monitor;
-} Rule;
-
 /* function declarations */
 static void applyrules(Client *c);
-static bool applysizehints(Client *c, int *x, int *y, int *w, int *h, bool interact);
 static void arrange(Monitor *m);
 static void arrangemon(Monitor *m);
-static void attach(Client *c);
-static void attachstack(Client *c);
 static int buttonpress(xcb_generic_event_t *e);
 static void checkotherwm(void);
 static void cleanup(void);
 static void cleanupmon(Monitor *mon);
 static void clearevent(int response_type);
-static void clearurgent(Client *c);
 static int clientmessage(xcb_generic_event_t *e);
-static void configure(Client *c);
 static int configurenotify(xcb_generic_event_t *e);
 static int configurerequest(xcb_generic_event_t *e);
 static Monitor *createmon(void);
 static int destroynotify(xcb_generic_event_t *e);
-static void detach(Client *c);
-static void detachstack(Client *c);
 static void die(const char *errstr, ...);
 static Monitor *dirtomon(int dir);
 static void drawbar(Monitor *m);
-static void drawbars(void);
 static void drawsquare(bool filled, bool empty, bool invert, uint32_t col[ColLast], xcb_window_t w);
 static void drawtext(const char *text, uint32_t col[ColLast], bool invert, xcb_window_t w);
 static int enternotify(xcb_generic_event_t *e);
 static int expose(xcb_generic_event_t *e);
-static void focus(Client *c);
 static int focusin(xcb_generic_event_t *e);
 static void focusmon(const Arg *arg);
 static void focusstack(const Arg *arg);
@@ -190,10 +50,8 @@ static uint32_t getcolor(const char *colstr);
 static bool getrootptr(int *x, int *y);
 static xcb_atom_t getstate(xcb_window_t w);
 static bool gettextprop(xcb_window_t w, xcb_atom_t atom, char *text, unsigned int size);
-static void grabbuttons(Client *c, bool focused);
 static void grabkeys(void);
 static void initfont(const char *fontstr);
-static bool isprotodel(Client *c);
 static int keypress(xcb_generic_event_t *e);
 static void killclient(const Arg *arg);
 static void manage(xcb_window_t w);
@@ -201,21 +59,16 @@ static int mappingnotify(xcb_generic_event_t *e);
 static int maprequest(xcb_generic_event_t *e);
 static void monocle(Monitor *m);
 static void movemouse(const Arg *arg);
-static Client *nexttiled(Client *c);
 static Monitor *ptrtomon(int x, int y);
 static int propertynotify(xcb_generic_event_t *e);
 static void quit(const Arg *arg);
-static void resize(Client *c, int x, int y, int w, int h, bool interact);
-static void resizeclient(Client *c, int x, int y, int w, int h);
 static void resizemouse(const Arg *arg);
 static void restack(Monitor *m);
 static void scan(void);
 static void sendmon(Client *c, Monitor *m);
-static void setclientstate(Client *c, long state);
 static void setlayout(const Arg *arg);
 static void setmfact(const Arg *arg);
 static void setup(void);
-static void showhide(Client *c);
 static void sigchld(int unused);
 static void spawn(const Arg *arg);
 static void tag(const Arg *arg);
@@ -226,7 +79,6 @@ static void togglebar(const Arg *arg);
 static void togglefloating(const Arg *arg);
 static void toggletag(const Arg *arg);
 static void toggleview(const Arg *arg);
-static void unfocus(Client *c, bool setfocus);
 static void unmanage(Client *c, bool destroyed);
 static int unmapnotify(xcb_generic_event_t *e);
 static bool updategeom(void);
@@ -246,25 +98,18 @@ static void zoom(const Arg *arg);
 static const char broken[] = "broken";
 static char stext[256];
 static int screen;
-static int sw, sh;           /* X display screen geometry width, height */
-static int bh, blw = 0;      /* bar geometry */
+int sw, sh;           /* X display screen geometry width, height */
+int bh, blw = 0;      /* bar geometry */
 static unsigned int numlockmask = 0;
-static xcb_atom_t wmatom[WMLast], netatom[NetLast];
+xcb_atom_t wmatom[WMLast], netatom[NetLast];
 static xcb_cursor_t cursor[CurLast];
-static xcb_connection_t *conn = NULL;
-static DC dc;
-static Monitor *mons = NULL, *selmon = NULL;
-static xcb_window_t root;
+DC dc;
+Monitor *mons = NULL, *selmon = NULL;
+xcb_window_t root;
 static xcb_screen_t *xscreen = NULL;
 static xcb_key_symbols_t *syms = NULL;
 static xcb_generic_error_t *err = NULL;
-
-typedef struct
-{
-	uint32_t request;
-	//xcb_generic_event_handler_t func;
-	int (*func)(xcb_generic_event_t *e);
-} handler_func_t;
+xcb_connection_t *conn = NULL;
 
 static const handler_func_t handler_funs[] = {
 	{ XCB_BUTTON_PRESS, buttonpress },
@@ -383,79 +228,12 @@ void applyrules(Client *c) {
 	c->tags = c->tags & TAGMASK ? c->tags & TAGMASK : c->mon->tagset[c->mon->seltags];
 }
 
-bool applysizehints(Client *c, int *x, int *y, int *w, int *h, bool interact) {
-	bool baseismin;
-	Monitor *m = c->mon;
-
-	/* set minimum possible */
-	*w = MAX(1, *w);
-	*h = MAX(1, *h);
-	if(interact) {
-		if(*x > sw)
-			*x = sw - WIDTH(c);
-		if(*y > sh)
-			*y = sh - HEIGHT(c);
-		if(*x + *w + 2 * c->bw < 0)
-			*x = 0;
-		if(*y + *h + 2 * c->bw < 0)
-			*y = 0;
-	}
-	else {
-		if(*x > m->mx + m->mw)
-			*x = m->mx + m->mw - WIDTH(c);
-		if(*y > m->my + m->mh)
-			*y = m->my + m->mh - HEIGHT(c);
-		if(*x + *w + 2 * c->bw < m->mx)
-			*x = m->mx;
-		if(*y + *h + 2 * c->bw < m->my)
-			*y = m->my;
-	}
-	if(*h < bh)
-		*h = bh;
-	if(*w < bh)
-		*w = bh;
-	if(resizehints || c->isfloating) {
-		/* see last two sentences in ICCCM 4.1.2.3 */
-		baseismin = c->basew == c->minw && c->baseh == c->minh;
-		if(!baseismin) { /* temporarily remove base dimensions */
-			*w -= c->basew;
-			*h -= c->baseh;
-		}
-		/* adjust for aspect limits */
-		if(c->mina > 0 && c->maxa > 0) {
-			if(c->maxa < (float)*w / *h)
-				*w = *h * c->maxa + 0.5;
-			else if(c->mina < (float)*h / *w)
-				*h = *w * c->mina + 0.5;
-		}
-		if(baseismin) { /* increment calculation requires this */
-			*w -= c->basew;
-			*h -= c->baseh;
-		}
-		/* adjust for increment value */
-		if(c->incw)
-			*w -= *w % c->incw;
-		if(c->inch)
-			*h -= *h % c->inch;
-		/* restore base dimensions */
-		*w += c->basew;
-		*h += c->baseh;
-		*w = MAX(*w, c->minw);
-		*h = MAX(*h, c->minh);
-		if(c->maxw)
-			*w = MIN(*w, c->maxw);
-		if(c->maxh)
-			*h = MIN(*h, c->maxh);
-	}
-	return *x != c->x || *y != c->y || *w != c->w || *h != c->h;
-}
-
 void arrange(Monitor *m) {
 	if(m)
-		showhide(m->stack);
+		client_show_hide(m->stack);
 	else for(m = mons; m; m = m->next)
-		showhide(m->stack);
-	focus(NULL);
+		client_show_hide(m->stack);
+	client_focus(NULL);
 	if(m)
 		arrangemon(m);
 	else for(m = mons; m; m = m->next)
@@ -469,16 +247,6 @@ void arrangemon(Monitor *m) {
 	restack(m);
 }
 
-void attach(Client *c) {
-	c->next = c->mon->clients;
-	c->mon->clients = c;
-}
-
-void attachstack(Client *c) {
-	c->snext = c->mon->stack;
-	c->mon->stack = c;
-}
-
 int buttonpress(xcb_generic_event_t *ev) {
 	unsigned int i, x, click;
 	Arg arg = {0};
@@ -489,9 +257,9 @@ int buttonpress(xcb_generic_event_t *ev) {
 	click = ClkRootWin;
 	/* focus monitor if necessary */
 	if((m = wintomon(e->event)) && m != selmon) {
-		unfocus(selmon->sel, true);
+		client_unfocus(selmon->sel, true);
 		selmon = m;
-		focus(NULL);
+		client_focus(NULL);
 	}
 	if(e->event == selmon->barwin) {
 		i = x = 0;
@@ -510,7 +278,7 @@ int buttonpress(xcb_generic_event_t *ev) {
 			click = ClkWinTitle;
 	}
 	else if((c = wintoclient(e->event))) {
-		focus(c);
+		client_focus(c);
 		click = ClkClientWin;
 	}
 	for(i = 0; i < LENGTH(buttons); i++)
@@ -576,33 +344,6 @@ void cleanupmon(Monitor *mon) {
 	free(mon);
 }
 
-void clearurgent(Client *c) {
-	xcb_icccm_wm_hints_t wmh;
-	xcb_get_property_cookie_t wmh_cookie;
-
-	wmh_cookie = xcb_icccm_get_wm_hints_unchecked(conn, c->win);
-	c->isurgent = false;
-	if(!xcb_icccm_get_wm_hints_reply(conn, wmh_cookie, &wmh, NULL))
-		return;
-	wmh.flags &= ~XCB_ICCCM_WM_HINT_X_URGENCY;
-	xcb_icccm_set_wm_hints(conn, c->win, &wmh);
-}
-
-void configure(Client *c) {
-	xcb_configure_notify_event_t config_event;
-	config_event.response_type = XCB_CONFIGURE_NOTIFY;
-	config_event.event = c->win;
-	config_event.window = c->win;
-	config_event.x = c->x;
-	config_event.y = c->y;
-	config_event.width = c->w;
-	config_event.height = c->h;
-	config_event.border_width = c->bw;
-	config_event.above_sibling = XCB_NONE;
-	config_event.override_redirect = false;
-	xcb_send_event(conn, false, c->win, XCB_EVENT_MASK_STRUCTURE_NOTIFY, (char*)&config_event);
-}
-
 int configurenotify(xcb_generic_event_t *e) {
 	Monitor *m;
 	xcb_configure_notify_event_t *ev = (xcb_configure_notify_event_t*)e;
@@ -651,7 +392,7 @@ int configurerequest(xcb_generic_event_t *e) {
 			if((ev->value_mask & (XCB_CONFIG_WINDOW_X|XCB_CONFIG_WINDOW_Y)) && 
 				!(ev->value_mask & (XCB_CONFIG_WINDOW_WIDTH|
 					XCB_CONFIG_WINDOW_HEIGHT)))
-				configure(c);
+				client_configure(c);
 			if(ISVISIBLE(c))
 			{
 				uint32_t values[] = { c->x, c->y, c->w, c->h };
@@ -661,7 +402,7 @@ int configurerequest(xcb_generic_event_t *e) {
 			}
 		}
 		else
-			configure(c);
+			client_configure(c);
 	}
 	else {
 		// long, but fairly robust
@@ -711,25 +452,6 @@ int destroynotify(xcb_generic_event_t *e) {
 		unmanage(c, true);
 
 	return 0;
-}
-
-void detach(Client *c) {
-	Client **tc;
-
-	for(tc = &c->mon->clients; *tc && *tc != c; tc = &(*tc)->next);
-	*tc = c->next;
-}
-
-void detachstack(Client *c) {
-	Client **tc, *t;
-
-	for(tc = &c->mon->stack; *tc && *tc != c; tc = &(*tc)->snext);
-	*tc = c->snext;
-
-	if(c == c->mon->sel) {
-		for(t = c->mon->stack; t && !ISVISIBLE(t); t = t->snext);
-		c->mon->sel = t;
-	}
 }
 
 void die(const char *errstr, ...) {
@@ -867,11 +589,11 @@ int enternotify(xcb_generic_event_t *e) {
 	if((ev->mode != XCB_NOTIFY_MODE_NORMAL || ev->detail == XCB_NOTIFY_DETAIL_INFERIOR) && ev->event != root)
 		return 0;
 	if((m = wintomon(ev->event)) && m != selmon) {
-		unfocus(selmon->sel, true);
+		client_unfocus(selmon->sel, true);
 		selmon = m;
 	}
 
-	focus(wintoclient(ev->event));
+	client_focus(wintoclient(ev->event));
 
 	return 0;
 }
@@ -884,28 +606,6 @@ int expose(xcb_generic_event_t *e) {
 		drawbar(m);
 
 	return 0;
-}
-
-void focus(Client *c) {
-	if(!c || !ISVISIBLE(c))
-		for(c = selmon->stack; c && !ISVISIBLE(c); c = c->snext);
-	if(selmon->sel)
-		unfocus(selmon->sel, false);
-	if(c) {
-		if(c->mon != selmon)
-			selmon = c->mon;
-		if(c->isurgent)
-			clearurgent(c);
-		detachstack(c);
-		attachstack(c);
-		grabbuttons(c, true);
-		xcb_change_window_attributes(conn, c->win, XCB_CW_BORDER_PIXEL, (uint32_t*)&dc.sel[ColBorder]);
-		xcb_set_input_focus(conn, XCB_INPUT_FOCUS_POINTER_ROOT, c->win, XCB_CURRENT_TIME);
-	}
-	else
-		xcb_set_input_focus(conn, XCB_INPUT_FOCUS_POINTER_ROOT, root, XCB_CURRENT_TIME);
-	selmon->sel = c;
-	drawbars();
 }
 
 int focusin(xcb_generic_event_t *e) { /* there are some broken focus acquiring clients */
@@ -925,9 +625,9 @@ void focusmon(const Arg *arg) {
 		return;
 	if((m = dirtomon(arg->i)) == selmon)
 		return;
-	unfocus(selmon->sel, true);
+	client_unfocus(selmon->sel, true);
 	selmon = m;
-	focus(NULL);
+	client_focus(NULL);
 }
 
 void focusstack(const Arg *arg) {
@@ -950,7 +650,7 @@ void focusstack(const Arg *arg) {
 					c = i;
 	}
 	if(c) {
-		focus(c);
+		client_focus(c);
 		restack(selmon);
 	}
 }
@@ -1113,20 +813,6 @@ void initfont(const char *fontstr) {
 	free(fontreply);
 }
 
-bool isprotodel(Client *c) {
-	int i;
-	bool ret = false;
-	xcb_icccm_get_wm_protocols_reply_t proto_reply;
-
-	if(xcb_icccm_get_wm_protocols_reply(conn, xcb_icccm_get_wm_protocols_unchecked(conn, c->win, wmatom[WMProtocols]), &proto_reply, NULL)) {
-		for(i = 0; !ret && i < proto_reply.atoms_len; i++)
-			if(proto_reply.atoms[i] == wmatom[WMDelete])
-				ret = true;
-		xcb_icccm_get_wm_protocols_reply_wipe(&proto_reply);
-	}
-	return ret;
-}
-
 int keypress(xcb_generic_event_t *e) {
 	unsigned int i;
 	xcb_keysym_t keysym;
@@ -1149,7 +835,7 @@ int keypress(xcb_generic_event_t *e) {
 void killclient(const Arg *arg) {
 	if(!selmon->sel)
 		return;
-	if(isprotodel(selmon->sel)) {
+	if(client_is_proto_del(selmon->sel)) {
 		xcb_client_message_event_t ev;
 		ev.response_type = XCB_CLIENT_MESSAGE;
 		ev.window = selmon->sel->win;
@@ -1224,20 +910,20 @@ void manage(xcb_window_t w)
 		XCB_EVENT_MASK_ENTER_WINDOW | XCB_EVENT_MASK_FOCUS_CHANGE |
 		XCB_EVENT_MASK_PROPERTY_CHANGE | XCB_EVENT_MASK_STRUCTURE_NOTIFY };
 	xcb_change_window_attributes(conn, w, XCB_CW_BORDER_PIXEL | XCB_CW_EVENT_MASK, cw_values);
-	configure(c); /* propagates border_width, if size doesn't change */
+	client_configure(c); /* propagates border_width, if size doesn't change */
 	updatesizehints(c);
 	grabbuttons(c, false);
 	if(!c->isfloating)
 		c->isfloating = c->oldstate = trans != XCB_WINDOW_NONE || c->isfixed;
-	attach(c);
-	attachstack(c);
+	client_attach(c);
+	client_attach_stack(c);
 	uint32_t config_values[] = { c->x + 2 * sw, c->y, c->w, c->h, c->bw, XCB_STACK_MODE_ABOVE };
 	xcb_configure_window(conn, c->win, XCB_CONFIG_WINDOW_X | XCB_CONFIG_WINDOW_Y |
 			     XCB_CONFIG_WINDOW_WIDTH | XCB_CONFIG_WINDOW_HEIGHT |
 			     XCB_CONFIG_WINDOW_BORDER_WIDTH | 
 			     (c->isfloating) ? XCB_CONFIG_WINDOW_STACK_MODE : 0, config_values);
 	xcb_map_window(conn, c->win);
-	setclientstate(c, XCB_ICCCM_WM_STATE_NORMAL);
+	client_set_state(c, XCB_ICCCM_WM_STATE_NORMAL);
 	arrange(c->mon);
 }
 
@@ -1280,8 +966,8 @@ void monocle(Monitor *m) {
 			n++;
 	if(n > 0) /* override layout symbol */
 		snprintf(m->ltsymbol, sizeof m->ltsymbol, "[%d]", n);
-	for(c = nexttiled(m->clients); c; c = nexttiled(c->next))
-		resize(c, m->wx, m->wy, m->ww - 2 * c->bw, m->wh - 2 * c->bw, false);
+	for(c = client_next_tiled(m->clients); c; c = client_next_tiled(c->next))
+		client_resize(c, m->wx, m->wy, m->ww - 2 * c->bw, m->wh - 2 * c->bw, false);
 }
 
 void movemouse(const Arg *arg) {
@@ -1331,7 +1017,7 @@ void movemouse(const Arg *arg) {
 			}
 
 			if(!selmon->lt[selmon->sellt]->arrange || c->isfloating)
-				resize(c, nx, ny, c->w, c->h, true);
+				client_resize(c, nx, ny, c->w, c->h, true);
 		}
 		else if(ev->response_type == XCB_BUTTON_RELEASE)
 		{
@@ -1348,13 +1034,8 @@ void movemouse(const Arg *arg) {
 	if((m = ptrtomon(c->x + c->w / 2, c->y + c->h / 2)) != selmon) {
 		sendmon(c, m);
 		selmon = m;
-		focus(NULL);
+		client_focus(NULL);
 	}
-}
-
-Client* nexttiled(Client *c) {
-	for(; c && (c->isfloating || !ISVISIBLE(c)); c = c->next);
-	return c;
 }
 
 Monitor* ptrtomon(int x, int y) {
@@ -1422,7 +1103,7 @@ int clientmessage(xcb_generic_event_t *e) {
 			c->oldbw = c->bw;
 			c->bw = 0;
 			c->isfloating = 1;
-			resizeclient(c, c->mon->mx, c->mon->my, c->mon->mw, c->mon->mh);
+			client_resize_client(c, c->mon->mx, c->mon->my, c->mon->mw, c->mon->mh);
 			uint32_t values[] = { XCB_STACK_MODE_ABOVE };
 			xcb_configure_window(conn, c->win, XCB_CONFIG_WINDOW_STACK_MODE, values);
 		}
@@ -1435,7 +1116,7 @@ int clientmessage(xcb_generic_event_t *e) {
 			c->y = c->oldy;
 			c->w = c->oldw;
 			c->h = c->oldh;
-			resizeclient(c, c->x, c->y, c->w, c->h);
+			client_resize_client(c, c->x, c->y, c->w, c->h);
 			arrange(c->mon);
 		}
 	}
@@ -1447,24 +1128,6 @@ void quit(const Arg *arg) {
 	cleanup();
 	xcb_disconnect(conn);
 	exit(0);
-}
-
-void resize(Client *c, int x, int y, int w, int h, bool interact) {
-	if(applysizehints(c, &x, &y, &w, &h, interact))
-		resizeclient(c, x, y, w, h);
-}
-
-void resizeclient(Client *c, int x, int y, int w, int h) {
-	uint32_t values[] = { x, y, w, h, c->bw };
-	xcb_configure_window(conn, c->win, XCB_CONFIG_WINDOW_X | XCB_CONFIG_WINDOW_Y | 
-		XCB_CONFIG_WINDOW_WIDTH | XCB_CONFIG_WINDOW_HEIGHT | XCB_CONFIG_WINDOW_BORDER_WIDTH,
-		values);
-	c->oldx = c->x; c->x = x;
-	c->oldy = c->y; c->y = y;
-	c->oldw = c->w; c->w = w;
-	c->oldh = c->h; c->h = h;
-	configure(c);
-	xcb_flush(conn);
 }
 
 void resizemouse(const Arg *arg) {
@@ -1508,7 +1171,7 @@ void resizemouse(const Arg *arg) {
 			}
 
 			if(!selmon->lt[selmon->sellt]->arrange || c->isfloating)
-				resize(c, c->x, c->y, nw, nh, true);
+				client_resize(c, c->x, c->y, nw, nh, true);
 		}
 		else if(ev->response_type == XCB_BUTTON_RELEASE)
 		{
@@ -1530,7 +1193,7 @@ void resizemouse(const Arg *arg) {
 	if((m = ptrtomon(c->x + c->w / 2, c->y + c->h / 2)) != selmon) {
 		sendmon(c, m);
 		selmon = m;
-		focus(NULL);
+		client_focus(NULL);
 	}
 }
 
@@ -1610,22 +1273,15 @@ void scan(void) {
 void sendmon(Client *c, Monitor *m) {
 	if(c->mon == m)
 		return;
-	unfocus(c, true);
-	detach(c);
-	detachstack(c);
+	client_unfocus(c, true);
+	client_detach(c);
+	client_detach_stack(c);
 	c->mon = m;
 	c->tags = m->tagset[m->seltags]; /* assign tags of target monitor */
-	attach(c);
-	attachstack(c);
-	focus(NULL);
+	client_attach(c);
+	client_attach_stack(c);
+	client_focus(NULL);
 	arrange(NULL);
-}
-
-void setclientstate(Client *c, long state) {
-	long data[] = { state, XCB_ATOM_NONE };
-
-	xcb_change_property(conn, XCB_PROP_MODE_REPLACE, c->win, wmatom[WMState], 
-		wmatom[WMState], 32, 2, (unsigned char*)data);
 }
 
 void setlayout(const Arg *arg) {
@@ -1760,24 +1416,6 @@ void setup(void)
 	grabkeys();
 }
 
-void showhide(Client *c) {
-	if(!c)
-		return;
-	if(ISVISIBLE(c)) { /* show clients top down */
-		uint32_t values[] = { c->x, c->y };
-		xcb_configure_window(conn, c->win, XCB_CONFIG_WINDOW_X | XCB_CONFIG_WINDOW_Y, values);
-		if(!c->mon->lt[c->mon->sellt]->arrange || c->isfloating)
-			resize(c, c->x, c->y, c->w, c->h, false);
-		showhide(c->snext);
-	}
-	else { /* hide clients bottom up */
-		showhide(c->snext);
-		uint32_t values[] = { c->x + 2 * sw, c->y };
-		xcb_configure_window(conn, c->win, XCB_CONFIG_WINDOW_X | XCB_CONFIG_WINDOW_Y, values);
-	}
-}
-
-
 void sigchld(int unused) {
 	if(signal(SIGCHLD, sigchld) == SIG_ERR)
 		die("Can't install SIGCHLD handler");
@@ -1830,13 +1468,13 @@ void tile(Monitor *m) {
 	unsigned int i, n;
 	Client *c;
 
-	for(n = 0, c = nexttiled(m->clients); c; c = nexttiled(c->next), n++);
+	for(n = 0, c = client_next_tiled(m->clients); c; c = client_next_tiled(c->next), n++);
 	if(n == 0)
 		return;
 	/* master */
-	c = nexttiled(m->clients);
+	c = client_next_tiled(m->clients);
 	mw = m->mfact * m->ww;
-	resize(c, m->wx, m->wy, (n == 1 ? m->ww : mw) - 2 * c->bw, m->wh - 2 * c->bw, false);
+	client_resize(c, m->wx, m->wy, (n == 1 ? m->ww : mw) - 2 * c->bw, m->wh - 2 * c->bw, false);
 	if(--n == 0)
 		return;
 	/* tile stack */
@@ -1846,8 +1484,8 @@ void tile(Monitor *m) {
 	h = m->wh / n;
 	if(h < bh)
 		h = m->wh;
-	for(i = 0, c = nexttiled(c->next); c; c = nexttiled(c->next), i++) {
-		resize(c, x, y, w - 2 * c->bw, /* remainder */ ((i + 1 == n)
+	for(i = 0, c = client_next_tiled(c->next); c; c = client_next_tiled(c->next), i++) {
+		client_resize(c, x, y, w - 2 * c->bw, /* remainder */ ((i + 1 == n)
 		       ? m->wy + m->wh - y - 2 * c->bw : h - 2 * c->bw), false);
 		if(h != m->wh)
 			y = c->y + HEIGHT(c);
@@ -1868,7 +1506,7 @@ void togglefloating(const Arg *arg) {
 		return;
 	selmon->sel->isfloating = !selmon->sel->isfloating || selmon->sel->isfixed;
 	if(selmon->sel->isfloating)
-		resize(selmon->sel, selmon->sel->x, selmon->sel->y,
+		client_resize(selmon->sel, selmon->sel->x, selmon->sel->y,
 		       selmon->sel->w, selmon->sel->h, false);
 	arrange(selmon);
 }
@@ -1894,23 +1532,12 @@ void toggleview(const Arg *arg) {
 	}
 }
 
-void unfocus(Client *c, bool setfocus) {
-	if(!c)
-		return;
-	grabbuttons(c, false);
-	xcb_change_window_attributes(conn, c->win, XCB_CW_BORDER_PIXEL, 
-		(uint32_t*)&dc.norm[ColBorder]);
-	if(setfocus)
-		xcb_set_input_focus(conn, XCB_INPUT_FOCUS_POINTER_ROOT, 
-			c->win, XCB_CURRENT_TIME);
-}
-
 void unmanage(Client *c, bool destroyed) {
 	Monitor *m = c->mon;
 
 	/* The server grab construct avoids race conditions. */
-	detach(c);
-	detachstack(c);
+	client_detach(c);
+	client_detach_stack(c);
 	printf("unmanage %i, %i\n", destroyed, c->win);
 	if(!destroyed) {
 		uint32_t values[] = { c->oldbw };
@@ -1919,12 +1546,12 @@ void unmanage(Client *c, bool destroyed) {
 			XCB_CONFIG_WINDOW_BORDER_WIDTH, values);
 		xcb_ungrab_button_checked(conn, XCB_BUTTON_INDEX_ANY, c->win, 
 			XCB_GRAB_ANY);
-		setclientstate(c, XCB_ICCCM_WM_STATE_WITHDRAWN);
+		client_set_state(c, XCB_ICCCM_WM_STATE_WITHDRAWN);
 		xcb_flush(conn);
 		xcb_ungrab_server(conn);
 	}
 	free(c);
-	focus(NULL);
+	client_focus(NULL);
 	arrange(m);
 }
 
@@ -2130,12 +1757,12 @@ void zoom(const Arg *arg) {
 	|| selmon->lt[selmon->sellt]->arrange == monocle
 	|| (selmon->sel && selmon->sel->isfloating))
 		return;
-	if(c == nexttiled(selmon->clients))
-		if(!c || !(c = nexttiled(c->next)))
+	if(c == client_next_tiled(selmon->clients))
+		if(!c || !(c = client_next_tiled(c->next)))
 			return;
-	detach(c);
-	attach(c);
-	focus(c);
+	client_detach(c);
+	client_attach(c);
+	client_focus(c);
 	arrange(c->mon);
 }
 

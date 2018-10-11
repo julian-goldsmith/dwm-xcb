@@ -3,7 +3,7 @@
 
 include config.mk
 
-SRC = dwm.c
+SRC = dwm.c client.c
 OBJ = ${SRC:.c=.o}
 
 all: options dwm
