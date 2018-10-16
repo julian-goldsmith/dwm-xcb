@@ -1,4 +1,7 @@
 #include "dwm.h"
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include <xcb/xcb_icccm.h>
 
 bool client_apply_size_hints(Client *c, int *x, int *y, int *w, int *h, bool interact) {
@@ -216,4 +219,52 @@ bool client_is_proto_del(Client *c) {
 		xcb_icccm_get_wm_protocols_reply_wipe(&proto_reply);
 	}
 	return ret;
+}
+
+void client_unmanage(Client *c, bool destroyed) {
+	Monitor *m = c->mon;
+
+	/* The server grab construct avoids race conditions. */
+	client_detach(c);
+	client_detach_stack(c);
+	printf("unmanage %i, %i\n", destroyed, c->win);
+	if(!destroyed) {
+		uint32_t values[] = { c->oldbw };
+		xcb_grab_server(conn);
+		xcb_configure_window_checked(conn, c->win, 
+			XCB_CONFIG_WINDOW_BORDER_WIDTH, values);
+		xcb_ungrab_button_checked(conn, XCB_BUTTON_INDEX_ANY, c->win, 
+			XCB_GRAB_ANY);
+		client_set_state(c, XCB_ICCCM_WM_STATE_WITHDRAWN);
+		xcb_flush(conn);
+		xcb_ungrab_server(conn);
+	}
+	free(c);
+	client_focus(NULL);
+	arrange(m);
+}
+
+void client_send_to_monitor(Client *c, Monitor *m) {
+	if(c->mon == m)
+		return;
+	client_unfocus(c, true);
+	client_detach(c);
+	client_detach_stack(c);
+	c->mon = m;
+	c->tags = m->tagset[m->seltags]; /* assign tags of target monitor */
+	client_attach(c);
+	client_attach_stack(c);
+	client_focus(NULL);
+	arrange(NULL);
+}
+
+Client* client_get_from_window(xcb_window_t w) {
+	Client *c;
+	Monitor *m;
+
+	for(m = mons; m; m = m->next)
+		for(c = m->clients; c; c = c->next)
+			if(c->win == w)
+				return c;
+	return NULL;
 }
