@@ -59,7 +59,7 @@ static const handler_func_t handler_funs[] = {
 /* configuration, allows nested code to access above variables */
 #include "config.h"
 
-static void _testerr(const char* file, const int line)
+void _testerr(const char* file, const int line)
 {
 	if(err)
 	{
@@ -71,15 +71,11 @@ static void _testerr(const char* file, const int line)
 	}
 }
 
-#define testerr() _testerr(__FILE__, __LINE__);
-
-static void _testcookie(xcb_void_cookie_t cookie, const char* file, const int line)
+void _testcookie(xcb_void_cookie_t cookie, const char* file, const int line)
 {
 	err = xcb_request_check(conn, cookie);
 	_testerr(file, line);
 }
-
-#define testcookie(cookie) _testcookie(cookie, __FILE__, __LINE__);
 
 static void* malloc_safe(size_t size)
 {

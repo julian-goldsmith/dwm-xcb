@@ -220,4 +220,10 @@ extern int bh, blw;      /* bar geometry */
 extern xcb_atom_t wmatom[WMLast], netatom[NetLast];
 extern const char *tags[];
 
+void _testerr(const char* file, const int line)
+#define testerr() _testerr(__FILE__, __LINE__);
+
+void _testcookie(xcb_void_cookie_t cookie, const char* file, const int line);
+#define testcookie(cookie) _testcookie(cookie, __FILE__, __LINE__);
+
 #endif
