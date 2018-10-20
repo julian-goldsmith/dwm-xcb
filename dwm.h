@@ -142,6 +142,7 @@ void client_send_to_monitor(Client *c, Monitor *m);
 Client *client_get_from_window(xcb_window_t w);
 
 // FIXME: Rename these.
+void draw_init();
 void drawbars(void);
 void grabbuttons(Client *c, bool focused);
 void arrange(Monitor *m);
@@ -218,9 +219,57 @@ extern xcb_window_t root;
 extern int sw, sh;           /* X display screen geometry width, height */
 extern int bh, blw;      /* bar geometry */
 extern xcb_atom_t wmatom[WMLast], netatom[NetLast];
-extern const char *tags[];
+extern char stext[256];
 
-void _testerr(const char* file, const int line)
+/* appearance */
+extern const char font[];
+extern const char normbordercolor[];
+extern const char normbgcolor[];
+extern const char normfgcolor[];
+extern const char selbordercolor[];
+extern const char selbgcolor[];
+extern const char selfgcolor[];
+
+extern const unsigned int borderpx;
+extern const unsigned int snap;
+extern const bool showbar;
+extern const bool topbar;
+
+/* tagging */
+#define NUM_TAGS 9
+extern const char *tags[NUM_TAGS];
+extern unsigned int tagwidths[NUM_TAGS];
+extern unsigned int alltagswidth;
+
+/* layout(s) */
+extern const float mfact;
+extern const bool resizehints;
+
+#define NUM_LAYOUTS 3
+extern const Layout layouts[NUM_LAYOUTS];
+
+/* key definitions */
+#define MODKEY XCB_MOD_MASK_1		// MOD_MASK_1 is alt
+
+#define TAGKEYS(KEY,TAG) \
+	{ MODKEY,                       KEY,      view,           {.ui = 1 << TAG} }, \
+	{ MODKEY|XCB_MOD_MASK_CONTROL,  KEY,      toggleview,     {.ui = 1 << TAG} }, \
+	{ MODKEY|XCB_MOD_MASK_SHIFT,    KEY,      tag,            {.ui = 1 << TAG} }, \
+	{ MODKEY|XCB_MOD_MASK_CONTROL|XCB_MOD_MASK_SHIFT, KEY, toggletag, {.ui = 1 << TAG} },
+
+/* helper for spawning shell commands in the pre dwm-5.0 fashion */
+#define SHCMD(cmd) { .v = (extern const char*[]){ "/bin/sh", "-c", cmd, NULL } }
+
+/* commands */
+extern const char *dmenucmd[];
+extern const char *termcmd[];
+
+extern const Key keys[];
+/* button definitions */
+/* click can be ClkLtSymbol, ClkStatusText, ClkWinTitle, ClkClientWin, or ClkRootWin */
+extern const Button buttons[];
+
+void _testerr(const char* file, const int line);
 #define testerr() _testerr(__FILE__, __LINE__);
 
 void _testcookie(xcb_void_cookie_t cookie, const char* file, const int line);

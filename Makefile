@@ -3,7 +3,7 @@
 
 include config.mk
 
-SRC = dwm.c client.c
+SRC = dwm.c client.c draw.c config.c
 OBJ = ${SRC:.c=.o}
 
 all: options dwm
@@ -19,11 +19,11 @@ options:
 	@echo CC $<
 	@${CC} -c ${CFLAGS} $<
 
-${OBJ}: config.h config.mk
+${OBJ}: config.c config.mk
 
-config.h:
-	@echo creating $@ from config.def.h
-	@cp config.def.h $@
+config.c:
+	@echo creating $@ from config.def.c
+	@cp config.def.c $@
 
 dwm: ${OBJ}
 	@echo CC -o $@

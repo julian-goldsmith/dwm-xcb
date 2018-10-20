@@ -24,7 +24,7 @@
 
 /* variables */
 static const char broken[] = "broken";
-static char stext[256];
+char stext[256];
 static int screen;
 int sw, sh;           /* X display screen geometry width, height */
 int bh, blw = 0;      /* bar geometry */
@@ -56,9 +56,6 @@ static const handler_func_t handler_funs[] = {
 	{ XCB_NONE, NULL }
 };
 
-/* configuration, allows nested code to access above variables */
-#include "config.h"
-
 void _testerr(const char* file, const int line)
 {
 	if(err)
@@ -75,15 +72,6 @@ void _testcookie(xcb_void_cookie_t cookie, const char* file, const int line)
 {
 	err = xcb_request_check(conn, cookie);
 	_testerr(file, line);
-}
-
-static void* malloc_safe(size_t size)
-{
-	void *ret;
-	if(!(ret = malloc(size)))
-		die("fatal: could not malloc() %u bytes\n", size);
-	memset(ret, 0, size);
-	return ret;
 }
 
 void clearevent(int response_type)
@@ -130,43 +118,63 @@ void arrangemon(Monitor *m) {
 }
 
 int buttonpress(xcb_generic_event_t *ev) {
-	unsigned int i, x, click;
-	Arg arg = {0};
-	Client *c;
 	Monitor *m;
-	xcb_button_press_event_t *e = (xcb_button_press_event_t*)ev;
+	xcb_button_press_event_t *e = (xcb_button_press_event_t*) ev;
+	unsigned int click;
+	unsigned int seltag = 0;
 
-	click = ClkRootWin;
 	/* focus monitor if necessary */
 	if((m = wintomon(e->event)) && m != selmon) {
 		client_unfocus(selmon->sel, true);
 		selmon = m;
 		client_focus(NULL);
 	}
+
 	if(e->event == selmon->barwin) {
-		i = x = 0;
-		do {
-			x += TEXTW(tags[i]);
-		} while(e->event_x >= x && ++i < LENGTH(tags));
-		if(i < LENGTH(tags)) {
+		if(e->event_x < alltagswidth) {
 			click = ClkTagBar;
-			arg.ui = 1 << i;
-		}
-		else if(e->event_x < x + blw)
+
+			unsigned int* tagwidth = tagwidths;
+			unsigned int tagx = 0;
+
+			for (const char** tag = tags;
+			     tag < tags + NUM_TAGS && e->event_x < tagx;
+			     tag++, tagwidth++, seltag++)
+			{
+				tagx += *tagwidth;
+			}
+		} else if(e->event_x < alltagswidth + blw) {
 			click = ClkLtSymbol;
-		else if(e->event_x > selmon->wx + selmon->ww - TEXTW(stext))
+		} else if(e->event_x > selmon->wx + selmon->ww - TEXTW(stext)) {
 			click = ClkStatusText;
-		else
+		} else {
 			click = ClkWinTitle;
+		}
 	}
-	else if((c = client_get_from_window(e->event))) {
-		client_focus(c);
-		click = ClkClientWin;
+	else {
+		Client *c = client_get_from_window(e->event);
+		if (c) {
+			client_focus(c);
+			click = ClkClientWin;
+		} else {
+			click = ClkRootWin;
+		}
 	}
-	for(i = 0; i < LENGTH(buttons); i++)
-		if(click == buttons[i].click && buttons[i].func && buttons[i].button == e->detail
-		&& CLEANMASK(buttons[i].mask) == CLEANMASK(e->state))
-			buttons[i].func(click == ClkTagBar && buttons[i].arg.i == 0 ? &arg : &buttons[i].arg);
+
+	for (const Button *button = buttons; button->func != NULL; button++)
+	{
+		if(click == button->click && button->button == e->detail &&
+		   CLEANMASK(button->mask) == CLEANMASK(e->state))
+		{
+			Arg arg = button->arg;
+
+			if (click == ClkTagBar) {
+				arg.ui = 1 << seltag;
+			}
+
+			button->func(&arg);
+		}
+	}
 
 	return 0;
 }
@@ -311,16 +319,14 @@ int configurerequest(xcb_generic_event_t *e) {
 	return 0;
 }
 
-Monitor* createmon(void) {
-	Monitor *m;
-
-	m = (Monitor*)malloc_safe(sizeof(Monitor));
+Monitor* createmon() {
+	Monitor *m = (Monitor*) malloc(sizeof(Monitor));
 	m->tagset[0] = m->tagset[1] = 1;
 	m->mfact = mfact;
 	m->showbar = showbar;
 	m->topbar = topbar;
 	m->lt[0] = &layouts[0];
-	m->lt[1] = &layouts[1 % LENGTH(layouts)];
+	m->lt[1] = &layouts[1 % NUM_LAYOUTS];
 	strncpy(m->ltsymbol, layouts[0].symbol, sizeof m->ltsymbol);
 	return m;
 }
@@ -359,108 +365,6 @@ Monitor* dirtomon(int dir) {
 			for(m = mons; m->next != selmon; m = m->next);
 	}
 	return m;
-}
-
-void drawbar(Monitor *m) {
-	int x;
-	unsigned int i, occ = 0, urg = 0;
-	uint32_t *col;
-	Client *c;
-
-	for(c = m->clients; c; c = c->next) {
-		occ |= c->tags;
-		if(c->isurgent)
-			urg |= c->tags;
-	}
-	dc.x = 0;
-	for(i = 0; i < LENGTH(tags); i++) {
-		dc.w = TEXTW(tags[i]);
-		col = m->tagset[m->seltags] & 1 << i ? dc.sel : dc.norm;
-		drawtext(tags[i], col, urg & 1 << i, m->barwin);
-		if((m == selmon && selmon->sel && selmon->sel->tags & 1 << i) || occ & 1 << i)
-			drawsquare(m == selmon && selmon->sel && selmon->sel->tags & 1 << i,
-		        	   occ & 1 << i, urg & 1 << i, col, m->barwin);
-		dc.x += dc.w;
-	}
-	dc.w = blw = TEXTW(m->ltsymbol);
-	drawtext(m->ltsymbol, dc.norm, false, m->barwin);
-	dc.x += dc.w;
-	x = dc.x;
-	if(m == selmon) { /* status is only drawn on selected monitor */
-		dc.w = TEXTW(stext);
-		dc.x = m->ww - dc.w;
-		if(dc.x < x) {
-			dc.x = x;
-			dc.w = m->ww - x;
-		}
-		drawtext(stext, dc.norm, false, m->barwin);
-	}
-	else
-		dc.x = m->ww;
-	if((dc.w = dc.x - x) > bh) {
-		dc.x = x;
-		if(m->sel) {
-			col = m == selmon ? dc.sel : dc.norm;
-			drawtext(m->sel->name, col, false, m->barwin);
-			drawsquare(m->sel->isfixed, m->sel->isfloating, false, col, m->barwin);
-		}
-		else
-			drawtext(NULL, dc.norm, false, m->barwin);
-	}
-	xcb_flush(conn);
-}
-
-void drawbars(void) {
-	Monitor *m;
-
-	for(m = mons; m; m = m->next)
-		drawbar(m);
-}
-
-void drawsquare(bool filled, bool empty, bool invert, uint32_t col[ColLast], xcb_window_t w) {
-	int x;
-	xcb_rectangle_t r = { dc.x, dc.y, dc.w, dc.h };
-
-	uint32_t values[] = { col[invert ? ColBG : ColFG], col[invert ? ColFG : ColBG] };
-	xcb_change_gc(conn, dc.gc, XCB_GC_FOREGROUND | XCB_GC_BACKGROUND, values);
-
-	x = (dc.font.ascent + dc.font.descent + 2) / 4;
-	r.x = dc.x + 1;
-	r.y = dc.y + 1;
-
-	if(filled) {
-		r.width = r.height = x + 1;
-		xcb_poly_fill_rectangle(conn, w, dc.gc, 1, &r);
-	}
-	else if(empty) {
-		r.width = r.height = x;
-		xcb_poly_rectangle(conn, w, dc.gc, 1, &r);
-	}
-}
-
-void drawtext(const char *text, uint32_t col[ColLast], bool invert, xcb_window_t w) {
-	char buf[256];
-	int i, x, y, h, len, olen;
-	xcb_rectangle_t r = { dc.x, dc.y, dc.w, dc.h };
-
-	xcb_change_gc(conn, dc.gc, XCB_GC_FOREGROUND, (uint32_t*)&col[invert ? ColFG : ColBG]);
-	xcb_poly_fill_rectangle(conn, w, dc.gc, 1, &r);
-	if(!text)
-		return;
-	olen = strlen(text);
-	h = dc.font.ascent + dc.font.descent;
-	y = dc.y + (dc.h / 2) - (h / 2) + dc.font.ascent;
-	x = dc.x + (h / 2);
-	/* shorten text if necessary */
-	for(len = MIN(olen, sizeof buf); len && textnw(text, len) > dc.w - h; len--);
-	if(!len)
-		return;
-	memcpy(buf, text, len);
-	if(len < olen)
-		for(i = len; i && i > len - 3; buf[--i] = '.');
-	uint32_t values[] = { col[invert ? ColBG : ColFG], col[invert ? ColFG : ColBG] };
-	xcb_change_gc(conn, dc.gc, XCB_GC_FOREGROUND | XCB_GC_BACKGROUND, values);
-	xcb_image_text_8(conn, len, w, dc.gc, x, y, buf);
 }
 
 int enternotify(xcb_generic_event_t *e) {
@@ -641,42 +545,57 @@ bool gettextprop(xcb_window_t w, xcb_atom_t atom, char *text, unsigned int size)
 }
 
 void grabbuttons(Client *c, bool focused) {
-	unsigned int i, j;
-	unsigned int modifiers[] = { 0, XCB_MOD_MASK_LOCK, numlockmask, numlockmask|XCB_MOD_MASK_LOCK };
-
 	updatenumlockmask();
 	xcb_ungrab_button(conn, XCB_BUTTON_INDEX_ANY, c->win, XCB_GRAB_ANY);
-	if(focused) {
-		for(i = 0; i < LENGTH(buttons); i++)
-			if(buttons[i].click == ClkClientWin)
-				for(j = 0; j < LENGTH(modifiers); j++)
-					xcb_grab_button(conn, false, c->win, BUTTONMASK, XCB_GRAB_MODE_SYNC,
-						XCB_GRAB_MODE_ASYNC, XCB_WINDOW_NONE, XCB_CURSOR_NONE,
-						buttons[i].button, buttons[i].mask | modifiers[j]);
+
+	if (focused) {
+		for (const Button *button = buttons; button->func != NULL; button++) {
+			if(button->click == ClkClientWin) {
+				xcb_grab_button(conn, false, c->win, BUTTONMASK, XCB_GRAB_MODE_SYNC,
+					XCB_GRAB_MODE_ASYNC, XCB_WINDOW_NONE, XCB_CURSOR_NONE,
+					buttons->button, buttons->mask);
+				xcb_grab_button(conn, false, c->win, BUTTONMASK, XCB_GRAB_MODE_SYNC,
+					XCB_GRAB_MODE_ASYNC, XCB_WINDOW_NONE, XCB_CURSOR_NONE,
+					buttons->button, buttons->mask | XCB_MOD_MASK_LOCK);
+				xcb_grab_button(conn, false, c->win, BUTTONMASK, XCB_GRAB_MODE_SYNC,
+					XCB_GRAB_MODE_ASYNC, XCB_WINDOW_NONE, XCB_CURSOR_NONE,
+					buttons->button, buttons->mask | numlockmask);
+				xcb_grab_button(conn, false, c->win, BUTTONMASK, XCB_GRAB_MODE_SYNC,
+					XCB_GRAB_MODE_ASYNC, XCB_WINDOW_NONE, XCB_CURSOR_NONE,
+					buttons->button, buttons->mask | numlockmask | XCB_MOD_MASK_LOCK);
+			}
+		}
 	}
 	else
+	{
 		xcb_grab_button(conn, false, c->win, BUTTONMASK, XCB_GRAB_MODE_ASYNC,
 			XCB_GRAB_MODE_SYNC, XCB_WINDOW_NONE, XCB_CURSOR_NONE,
 			XCB_BUTTON_INDEX_ANY, XCB_BUTTON_MASK_ANY);
+	}
 }
 
 void grabkeys(void)
 {
 	updatenumlockmask();
-
-	unsigned int i, j;
-	unsigned int modifiers[] = { 0, XCB_MOD_MASK_LOCK, numlockmask, numlockmask | XCB_MOD_MASK_LOCK };
-	xcb_keycode_t *code;
-
 	xcb_ungrab_key(conn, XCB_GRAB_ANY, root, XCB_MOD_MASK_ANY);
-	for(i = 0; i < LENGTH(keys); i++)
+
+	for (const Key* key = keys; key->func != NULL; key++)
 	{
-		code = xcb_key_symbols_get_keycode(syms, keys[i].keysym);
+		xcb_keycode_t *code = xcb_key_symbols_get_keycode(syms, key->keysym);
+
 		if(code)
-			for(j = 0; j < LENGTH(modifiers); j++)
-				xcb_grab_key(conn, true, root, keys[i].mod | modifiers[j],
-					*code, XCB_GRAB_MODE_ASYNC, XCB_GRAB_MODE_ASYNC);
-		free(code);
+		{
+			xcb_grab_key(conn, true, root, key->mod,
+				*code, XCB_GRAB_MODE_ASYNC, XCB_GRAB_MODE_ASYNC);
+			xcb_grab_key(conn, true, root, key->mod | XCB_MOD_MASK_LOCK,
+				*code, XCB_GRAB_MODE_ASYNC, XCB_GRAB_MODE_ASYNC);
+			xcb_grab_key(conn, true, root, key->mod | numlockmask,
+				*code, XCB_GRAB_MODE_ASYNC, XCB_GRAB_MODE_ASYNC);
+			xcb_grab_key(conn, true, root, key->mod | numlockmask | XCB_MOD_MASK_LOCK,
+				*code, XCB_GRAB_MODE_ASYNC, XCB_GRAB_MODE_ASYNC);
+
+			free(code);
+		}
 	}
 }
 
@@ -695,18 +614,14 @@ void initfont(const char *fontstr) {
 }
 
 int keypress(xcb_generic_event_t *e) {
-	unsigned int i;
-	xcb_keysym_t keysym;
-	xcb_key_press_event_t *ev = (xcb_key_press_event_t*)e;
+	xcb_key_press_event_t *ev = (xcb_key_press_event_t*) e;
+	xcb_keysym_t keysym = xcb_key_press_lookup_keysym(syms, ev, 0);
 
-	keysym = xcb_key_press_lookup_keysym(syms, ev, 0);
-	for(i = 0; i < LENGTH(keys); i++)
+	for (const Key* key = keys; key->func != NULL; key++)
 	{
-		if(keysym == keys[i].keysym
-		&& CLEANMASK(keys[i].mod) == CLEANMASK(ev->state)
-		&& keys[i].func)
+		if(keysym == key->keysym && CLEANMASK(key->mod) == CLEANMASK(ev->state))
 		{
-			keys[i].func(&(keys[i].arg));
+			key->func(&(key->arg));
 		}
 	}
 
@@ -740,7 +655,7 @@ void manage(xcb_window_t w)
 	Client *c, *t = NULL;
 	xcb_window_t trans = XCB_WINDOW_NONE;
 
-	c = (Client*)malloc_safe(sizeof(Client));
+	c = (Client*) malloc(sizeof(Client));
 	c->win = w;
 	updatetitle(c);
 
@@ -1153,15 +1068,21 @@ void scan(void) {
 }
 
 void setlayout(const Arg *arg) {
-	if(!arg || !arg->v || arg->v != selmon->lt[selmon->sellt])
+	if(!arg || !arg->v || arg->v != selmon->lt[selmon->sellt]) {
 		selmon->sellt ^= 1;
-	if(arg && arg->v)
+	}
+
+	if(arg && arg->v) {
 		selmon->lt[selmon->sellt] = (Layout *)arg->v;
+	}
+
 	strncpy(selmon->ltsymbol, selmon->lt[selmon->sellt]->symbol, sizeof selmon->ltsymbol);
-	if(selmon->sel)
+
+	if(selmon->sel) {
 		arrange(selmon);
-	else
+	} else {
 		drawbar(selmon);
+	}
 }
 
 /* arg > 1.0 will set mfact absolutely */
@@ -1321,14 +1242,20 @@ void tagmon(const Arg *arg) {
 }
 
 int textnw(const char *text, unsigned int len) {
-	xcb_char2b_t *text_copy = (xcb_char2b_t*)malloc_safe(len*2);
-	for(int i = 0; i < len; i++)
+	// FIXME: Handle character encoding.
+	xcb_char2b_t *text_copy = (xcb_char2b_t*) malloc(len * 2);
+	for(int i = 0; i < len; i++) {
 		text_copy[i].byte2 = text[i];
-	xcb_query_text_extents_reply_t *reply = xcb_query_text_extents_reply(conn,	// FIXME: we should probably use iconv or something instead of casting
-		xcb_query_text_extents(conn, dc.gc, len, text_copy), &err);
+	}
+
+	xcb_query_text_extents_cookie_t cookie = xcb_query_text_extents(conn, dc.gc, len, text_copy);
+	xcb_query_text_extents_reply_t *reply = xcb_query_text_extents_reply(conn, cookie, &err);
+		
 	testerr();
+
+	int width = reply->overall_width;
 	free(reply);
-	return reply->overall_width;
+	return width;
 }
 
 void tile(Monitor *m) {
