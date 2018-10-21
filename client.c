@@ -128,25 +128,35 @@ void client_detach_stack(Client *c) {
 }
 
 void client_focus(Client *c) {
-	if(!c || !ISVISIBLE(c))
+	if(!c || !ISVISIBLE(c)) {
 		for(c = selmon->stack; c && !ISVISIBLE(c); c = c->snext);
-	if(selmon->sel)
+	}
+
+	if(selmon->sel) {
 		client_unfocus(selmon->sel, false);
+	}
+
 	if(c) {
-		if(c->mon != selmon)
+		if(c->mon != selmon) {
 			selmon = c->mon;
-		if(c->isurgent)
+		}
+
+		if(c->isurgent) {
 			client_clear_urgent(c);
+		}
+
 		client_detach_stack(c);
 		client_attach_stack(c);
 		grabbuttons(c, true);
 		xcb_change_window_attributes(conn, c->win, XCB_CW_BORDER_PIXEL, (uint32_t*)&dc.sel[ColBorder]);
 		xcb_set_input_focus(conn, XCB_INPUT_FOCUS_POINTER_ROOT, c->win, XCB_CURRENT_TIME);
 	}
-	else
+	else {
 		xcb_set_input_focus(conn, XCB_INPUT_FOCUS_POINTER_ROOT, root, XCB_CURRENT_TIME);
+	}
+
 	selmon->sel = c;
-	drawbars();
+	draw_bars();
 }
 
 void client_unfocus(Client *c, bool setfocus) {
@@ -198,8 +208,8 @@ void client_resize_client(Client *c, int x, int y, int w, int h) {
 void client_set_state(Client *c, long state) {
 	long data[] = { state, XCB_ATOM_NONE };
 
-	xcb_change_property(conn, XCB_PROP_MODE_REPLACE, c->win, wmatom[WMState], 
-		wmatom[WMState], 32, 2, (unsigned char*)data);
+	xcb_change_property(conn, XCB_PROP_MODE_REPLACE, c->win, WMState,
+		WMState, 32, 2, (unsigned char*)data);
 }
 
 Client* client_next_tiled(Client *c) {
@@ -212,9 +222,9 @@ bool client_is_proto_del(Client *c) {
 	bool ret = false;
 	xcb_icccm_get_wm_protocols_reply_t proto_reply;
 
-	if(xcb_icccm_get_wm_protocols_reply(conn, xcb_icccm_get_wm_protocols_unchecked(conn, c->win, wmatom[WMProtocols]), &proto_reply, NULL)) {
+	if(xcb_icccm_get_wm_protocols_reply(conn, xcb_icccm_get_wm_protocols_unchecked(conn, c->win, WMProtocols), &proto_reply, NULL)) {
 		for(i = 0; !ret && i < proto_reply.atoms_len; i++)
-			if(proto_reply.atoms[i] == wmatom[WMDelete])
+			if(proto_reply.atoms[i] == WMDelete)
 				ret = true;
 		xcb_icccm_get_wm_protocols_reply_wipe(&proto_reply);
 	}

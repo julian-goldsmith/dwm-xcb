@@ -31,16 +31,13 @@ const Layout layouts[NUM_LAYOUTS] = {
 };
 
 /* key definitions */
-#define MODKEY XCB_MOD_MASK_1		// MOD_MASK_1 is alt
+#define MODKEY XCB_MOD_MASK_4											/* MOD_MASK_1 is Alt.  MOD_MASK_4 is Windows/Command key. */
 
 #define TAGKEYS(KEY,TAG) \
 	{ MODKEY,                       KEY,      view,           {.ui = 1 << TAG} }, \
 	{ MODKEY|XCB_MOD_MASK_CONTROL,  KEY,      toggleview,     {.ui = 1 << TAG} }, \
 	{ MODKEY|XCB_MOD_MASK_SHIFT,    KEY,      tag,            {.ui = 1 << TAG} }, \
 	{ MODKEY|XCB_MOD_MASK_CONTROL|XCB_MOD_MASK_SHIFT, KEY, toggletag, {.ui = 1 << TAG} },
-
-/* helper for spawning shell commands in the pre dwm-5.0 fashion */
-#define SHCMD(cmd) { .v = (const char*[]){ "/bin/sh", "-c", cmd, NULL } }
 
 /* commands */
 const char *dmenucmd[] = { "dmenu_run", "-fn", font, "-nb", normbgcolor, "-nf", normfgcolor, "-sb", selbgcolor, "-sf", selfgcolor, NULL };
@@ -97,6 +94,6 @@ const Button buttons[] = {
 	{ ClkTagBar,            0,              XCB_BUTTON_INDEX_3,        toggleview,     {0} },
 	{ ClkTagBar,            MODKEY,         XCB_BUTTON_INDEX_1,        tag,            {0} },
 	{ ClkTagBar,            MODKEY,         XCB_BUTTON_INDEX_3,        toggletag,      {0} },
-	{ 0,			0,	   	NULL,	   		   NULL,	   {0} },
+	{ 0,			0,	   	0,	   		   NULL,	   {0} },
 };
 

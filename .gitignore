@@ -1,3 +1,5 @@
 dwm
 *.o
 config.h
+*~
+*.swp

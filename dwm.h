@@ -22,9 +22,6 @@
 /* enums */
 enum { CurNormal, CurResize, CurMove, CurLast };        /* cursor */
 enum { ColBorder, ColFG, ColBG, ColLast };              /* color */
-enum { NetSupported, NetWMName, NetWMState,
-       NetWMFullscreen, NetLast };                      /* EWMH atoms */
-enum { WMProtocols, WMDelete, WMState, WMLast };        /* default atoms */
 enum { ClkTagBar, ClkLtSymbol, ClkStatusText, ClkWinTitle,
        ClkClientWin, ClkRootWin, ClkLast };             /* clicks */
 
@@ -141,9 +138,13 @@ void client_unmanage(Client *c, bool destroyed);
 void client_send_to_monitor(Client *c, Monitor *m);
 Client *client_get_from_window(xcb_window_t w);
 
-// FIXME: Rename these.
 void draw_init();
-void drawbars(void);
+void draw_bars(void);
+void draw_bar(Monitor *m);
+void draw_square(bool filled, bool empty, bool invert, uint32_t col[ColLast], xcb_window_t w);
+void draw_text(const char *text, uint32_t col[ColLast], bool invert, xcb_window_t w);
+
+// FIXME: Rename these.
 void grabbuttons(Client *c, bool focused);
 void arrange(Monitor *m);
 void arrangemon(Monitor *m);
@@ -159,9 +160,6 @@ Monitor *createmon(void);
 int destroynotify(xcb_generic_event_t *e);
 void die(const char *errstr, ...);
 Monitor *dirtomon(int dir);
-void drawbar(Monitor *m);
-void drawsquare(bool filled, bool empty, bool invert, uint32_t col[ColLast], xcb_window_t w);
-void drawtext(const char *text, uint32_t col[ColLast], bool invert, xcb_window_t w);
 int enternotify(xcb_generic_event_t *e);
 int expose(xcb_generic_event_t *e);
 int focusin(xcb_generic_event_t *e);
@@ -213,13 +211,24 @@ Monitor *wintomon(xcb_window_t w);
 void zoom(const Arg *arg);
 
 extern xcb_connection_t* conn;
+extern xcb_generic_error_t *err;
 extern DC dc;
 extern Monitor *mons, *selmon;
 extern xcb_window_t root;
-extern int sw, sh;           /* X display screen geometry width, height */
-extern int bh, blw;      /* bar geometry */
-extern xcb_atom_t wmatom[WMLast], netatom[NetLast];
+extern int sw, sh;												/* X display screen geometry width, height */
+extern int bh, blw;												/* bar geometry */
 extern char stext[256];
+
+/* EWMH atoms */
+extern xcb_atom_t NetSupported;
+extern xcb_atom_t NetWMName;
+extern xcb_atom_t NetWMState;
+extern xcb_atom_t NetWMFullscreen;
+
+/* default atoms */
+extern xcb_atom_t WMProtocols;
+extern xcb_atom_t WMDelete;
+extern xcb_atom_t WMState;
 
 /* appearance */
 extern const char font[];
@@ -229,6 +238,7 @@ extern const char normfgcolor[];
 extern const char selbordercolor[];
 extern const char selbgcolor[];
 extern const char selfgcolor[];
+extern xcb_cursor_t cursor[CurLast];
 
 extern const unsigned int borderpx;
 extern const unsigned int snap;
@@ -247,18 +257,6 @@ extern const bool resizehints;
 
 #define NUM_LAYOUTS 3
 extern const Layout layouts[NUM_LAYOUTS];
-
-/* key definitions */
-#define MODKEY XCB_MOD_MASK_1		// MOD_MASK_1 is alt
-
-#define TAGKEYS(KEY,TAG) \
-	{ MODKEY,                       KEY,      view,           {.ui = 1 << TAG} }, \
-	{ MODKEY|XCB_MOD_MASK_CONTROL,  KEY,      toggleview,     {.ui = 1 << TAG} }, \
-	{ MODKEY|XCB_MOD_MASK_SHIFT,    KEY,      tag,            {.ui = 1 << TAG} }, \
-	{ MODKEY|XCB_MOD_MASK_CONTROL|XCB_MOD_MASK_SHIFT, KEY, toggletag, {.ui = 1 << TAG} },
-
-/* helper for spawning shell commands in the pre dwm-5.0 fashion */
-#define SHCMD(cmd) { .v = (extern const char*[]){ "/bin/sh", "-c", cmd, NULL } }
 
 /* commands */
 extern const char *dmenucmd[];

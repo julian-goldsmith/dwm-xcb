@@ -12,7 +12,6 @@
 #include <unistd.h>
 #include <sys/types.h>
 #include <sys/wait.h>
-#include <X11/cursorfont.h>
 #include <X11/keysym.h>
 #include <xcb/xcb_icccm.h>
 #include <xcb/xcb_atom.h>
@@ -29,15 +28,25 @@ static int screen;
 int sw, sh;           /* X display screen geometry width, height */
 int bh, blw = 0;      /* bar geometry */
 static unsigned int numlockmask = 0;
-xcb_atom_t wmatom[WMLast], netatom[NetLast];
-static xcb_cursor_t cursor[CurLast];
+xcb_cursor_t cursor[CurLast];
 DC dc;
 Monitor *mons = NULL, *selmon = NULL;
 xcb_window_t root;
 static xcb_screen_t *xscreen = NULL;
 static xcb_key_symbols_t *syms = NULL;
-static xcb_generic_error_t *err = NULL;
+xcb_generic_error_t *err = NULL;
 xcb_connection_t *conn = NULL;
+
+/* EWMH atoms */
+xcb_atom_t NetSupported;
+xcb_atom_t NetWMName;
+xcb_atom_t NetWMState;
+xcb_atom_t NetWMFullscreen;
+
+/* default atoms */
+xcb_atom_t WMProtocols;
+xcb_atom_t WMDelete;
+xcb_atom_t WMState;
 
 static const handler_func_t handler_funs[] = {
 	{ XCB_BUTTON_PRESS, buttonpress },
@@ -89,8 +98,9 @@ void clearevent(int response_type)
 		{
 			for(const handler_func_t* handler = handler_funs; handler->func != NULL; handler++)
 			{
-				if((ev->response_type & ~0x80) == handler->request)
+				if((ev->response_type & ~0x80) == handler->request) {
 					handler->func(ev);
+				}
 			}	
 		}
 			
@@ -99,21 +109,30 @@ void clearevent(int response_type)
 }
 
 void arrange(Monitor *m) {
-	if(m)
+	if(m) {
 		client_show_hide(m->stack);
-	else for(m = mons; m; m = m->next)
-		client_show_hide(m->stack);
-	client_focus(NULL);
-	if(m)
+		client_focus(NULL);
 		arrangemon(m);
-	else for(m = mons; m; m = m->next)
-		arrangemon(m);
+	} else {
+		for(m = mons; m; m = m->next) {
+			client_show_hide(m->stack);
+		}
+
+		client_focus(NULL);
+
+		for(m = mons; m; m = m->next) {
+			arrangemon(m);
+		}
+	}
 }
 
 void arrangemon(Monitor *m) {
-	strncpy(m->ltsymbol, m->lt[m->sellt]->symbol, sizeof m->ltsymbol);
-	if(m->lt[m->sellt]->arrange)
+	strncpy(m->ltsymbol, m->lt[m->sellt]->symbol, sizeof(m->ltsymbol));
+
+	if(m->lt[m->sellt]->arrange) {
 		m->lt[m->sellt]->arrange(m);
+	}
+
 	restack(m);
 }
 
@@ -212,8 +231,10 @@ void cleanup(void) {
 	xcb_free_colors(conn, xscreen->default_colormap, 0, ColLast, dc.norm);
 	xcb_free_colors(conn, xscreen->default_colormap, 0, ColLast, dc.sel);
 
-	while(mons)
+	while(mons) {
 		cleanupmon(mons);
+	}
+
 	xcb_set_input_focus(conn, XCB_INPUT_FOCUS_POINTER_ROOT, XCB_INPUT_FOCUS_POINTER_ROOT, 
 		XCB_CURRENT_TIME);
 	xcb_flush(conn);
@@ -388,7 +409,7 @@ int expose(xcb_generic_event_t *e) {
 	xcb_expose_event_t *ev = (xcb_expose_event_t*)e;
 
 	if(ev->count == 0 && (m = wintomon(ev->window)))
-		drawbar(m);
+		draw_bar(m);
 
 	return 0;
 }
@@ -502,7 +523,7 @@ xcb_atom_t getstate(xcb_window_t w) {
 	xcb_atom_t result = -1;
 
 	xcb_get_property_cookie_t cookie = xcb_get_property(conn, 0, 
-		w, wmatom[WMState], XCB_ATOM_ATOM, 0, 0);
+		w, WMState, XCB_ATOM_ATOM, 0, 0);
 	xcb_get_property_reply_t *reply = xcb_get_property_reply(conn, cookie, &err);
 	testerr();
 
@@ -599,20 +620,6 @@ void grabkeys(void)
 	}
 }
 
-void initfont(const char *fontstr) {
-	dc.font.xfont = xcb_generate_id(conn);
-	testcookie(xcb_open_font_checked(conn, dc.font.xfont, strlen(fontstr), fontstr));
-	
-	xcb_query_font_reply_t *fontreply = xcb_query_font_reply(conn, xcb_query_font(conn, dc.font.xfont), &err);
-	testerr();
-
-	dc.font.ascent = fontreply->font_ascent;
-	dc.font.descent = fontreply->font_descent;
-	dc.font.height = dc.font.ascent + dc.font.descent;
-
-	free(fontreply);
-}
-
 int keypress(xcb_generic_event_t *e) {
 	xcb_key_press_event_t *ev = (xcb_key_press_event_t*) e;
 	xcb_keysym_t keysym = xcb_key_press_lookup_keysym(syms, ev, 0);
@@ -621,7 +628,7 @@ int keypress(xcb_generic_event_t *e) {
 	{
 		if(keysym == key->keysym && CLEANMASK(key->mod) == CLEANMASK(ev->state))
 		{
-			key->func(&(key->arg));
+			key->func(&key->arg);
 		}
 	}
 
@@ -636,9 +643,9 @@ void killclient(const Arg *arg) {
 		ev.response_type = XCB_CLIENT_MESSAGE;
 		ev.window = selmon->sel->win;
 		ev.format = 32;
-		ev.data.data32[0] = wmatom[WMDelete];
+		ev.data.data32[0] = WMDelete;
 		ev.data.data32[1] = XCB_TIME_CURRENT_TIME;
-		ev.type = wmatom[WMProtocols];
+		ev.type = WMProtocols;
 		testcookie(xcb_send_event_checked(conn, false, selmon->sel->win, 
 			XCB_EVENT_MASK_NO_EVENT, (const char*)&ev));
 	} else {
@@ -872,12 +879,14 @@ int propertynotify(xcb_generic_event_t *e) {
 		else if(ev->atom == XCB_ATOM_WM_HINTS)
 		{
 			updatewmhints(c);
-			drawbars();
+			draw_bars();
 		}
-		else if(ev->atom == XCB_ATOM_WM_NAME || ev->atom == netatom[NetWMName]) {
+		else if(ev->atom == XCB_ATOM_WM_NAME || ev->atom == NetWMName) {
 			updatetitle(c);
-			if(c == c->mon->sel)
-				drawbar(c->mon);
+
+			if(c == c->mon->sel) {
+				draw_bar(c->mon);
+			}
 		}
 	}
 
@@ -889,13 +898,13 @@ int clientmessage(xcb_generic_event_t *e) {
 	Client *c;
 
 	if((c = client_get_from_window(cme->window)) && 
-		(cme->type == netatom[NetWMState] && 
-		 cme->data.data32[1] == netatom[NetWMFullscreen]))
+		(cme->type == NetWMState && 
+		 cme->data.data32[1] == NetWMFullscreen))
 	{
 		if(cme->data.data32[0]) {
 			xcb_change_property(conn, XCB_PROP_MODE_REPLACE, cme->window, 
-				netatom[NetWMState], XCB_ATOM, 32, 1, 
-				(unsigned char*)&netatom[NetWMFullscreen]);
+				NetWMState, XCB_ATOM, 32, 1, 
+				(unsigned char*)& NetWMFullscreen);							// FIXME: How does this work?
 			c->oldstate = c->isfloating;
 			c->oldbw = c->bw;
 			c->bw = 0;
@@ -906,7 +915,7 @@ int clientmessage(xcb_generic_event_t *e) {
 		}
 		else {
 			xcb_change_property(conn, XCB_PROP_MODE_REPLACE, cme->window,
-				netatom[NetWMState], XCB_ATOM, 32, 0, (unsigned char*)0);
+				NetWMState, XCB_ATOM, 32, 0, (unsigned char*) 0);
 			c->isfloating = c->oldstate;
 			c->bw = c->oldbw;
 			c->x = c->oldx;
@@ -995,25 +1004,30 @@ void resizemouse(const Arg *arg) {
 }
 
 void restack(Monitor *m) {
-	Client *c;
+	draw_bar(m);
 
-	drawbar(m);
-	if(!m->sel)
+	if(!m->sel) {
 		return;
-	if(m->sel->isfloating || !m->lt[m->sellt]->arrange)
-	{
+	}
+
+	if(m->sel->isfloating || !m->lt[m->sellt]->arrange) {
 		uint32_t values[] = { XCB_STACK_MODE_ABOVE };
 		xcb_configure_window(conn, m->sel->win, XCB_CONFIG_WINDOW_STACK_MODE, values);
 	}
+
 	if(m->lt[m->sellt]->arrange) {
-		uint32_t values[] = { m->barwin, XCB_STACK_MODE_BELOW };
-		for(c = m->stack; c; c = c->snext)
+		for(Client *c = m->stack; c; c = c->snext) {
+			uint32_t values[] = { m->barwin, XCB_STACK_MODE_BELOW };
+
 			if(!c->isfloating && ISVISIBLE(c)) {
-				xcb_configure_window(conn, c->win, XCB_CONFIG_WINDOW_SIBLING |
-					XCB_CONFIG_WINDOW_STACK_MODE, values);
+				xcb_configure_window(conn, c->win,
+					XCB_CONFIG_WINDOW_SIBLING | XCB_CONFIG_WINDOW_STACK_MODE,
+					values);
 				values[0] = c->win;
 			}
+		}
 	}
+
 	xcb_flush(conn);
 
 	clearevent(XCB_ENTER_NOTIFY);
@@ -1081,7 +1095,7 @@ void setlayout(const Arg *arg) {
 	if(selmon->sel) {
 		arrange(selmon);
 	} else {
-		drawbar(selmon);
+		draw_bar(selmon);
 	}
 }
 
@@ -1098,94 +1112,52 @@ void setmfact(const Arg *arg) {
 	arrange(selmon);
 }
 
+xcb_atom_t setup_atom(const char* name) {
+	xcb_intern_atom_cookie_t atom_cookie = xcb_intern_atom(conn, 0, strlen(name), name);
+	xcb_intern_atom_reply_t *reply = xcb_intern_atom_reply(conn, atom_cookie, &err);
+	xcb_atom_t atom;
 
-#define SETUP_NUM_ATOMS (WMLast + NetLast)
+	if(reply) {
+		atom = reply->atom;
+		free(reply);
+	} else {
+		testerr();
+	}
 
-static const struct
-{
-	const char* name;
-	int number;
-	bool isnet;
-} setup_atoms[SETUP_NUM_ATOMS] = 
-{
-	{ "WM_PROTOCOLS",  WMProtocols, false },
-	{ "WM_DELETE_WINDOW", WMDelete, false },
-	{ "WM_STATE", WMState, false }, 
-	{ "_NET_SUPPORTED", NetSupported, true },
-	{ "_NET_WM_NAME", NetWMName, true },
-	{ "_NET_WM_STATE", NetWMState, true },
-	{ "_NET_WM_STATE_FULLSCREEN", NetWMFullscreen, true }
-};
+	return atom;
+}
+
+void setup_atoms() {
+	WMProtocols = setup_atom("WM_PROTOCOLS");
+	WMDelete = setup_atom("WM_DELETE_WINDOW");
+	WMState = setup_atom("WM_STATE");
+	NetSupported = setup_atom("_NET_SUPPORTED");
+	NetWMName = setup_atom("_NET_WM_NAME");
+	NetWMState = setup_atom("_NET_WM_STATE");
+	NetWMFullscreen = setup_atom("_NET_WM_STATE_FULLSCREEN");
+}
 
 void setup(void)
 {
 	/* clean up any zombies immediately */
 	sigchld(0);
 
-	initfont(font);
+	draw_init();
 
 	sw = xscreen->width_in_pixels;
 	sh = xscreen->height_in_pixels;
-	bh = dc.h = dc.font.height + 2;
 	updategeom();
 
-	/* init atoms */
-	xcb_intern_atom_cookie_t atom_cookie[SETUP_NUM_ATOMS];
-	for(int i = 0; i < SETUP_NUM_ATOMS; i++)
-	{
-		atom_cookie[i] = xcb_intern_atom(conn, 0, 
-			strlen(setup_atoms[i].name), setup_atoms[i].name);
-	}
-
-	for(int i = 0; i < SETUP_NUM_ATOMS; i++)
-	{
-		xcb_intern_atom_reply_t *reply;
-
-		if((reply = xcb_intern_atom_reply(conn, atom_cookie[i], &err)))
-		{
-			if(setup_atoms[i].isnet)
-				netatom[setup_atoms[i].number] = reply->atom;
-			else
-				wmatom[setup_atoms[i].number] = reply->atom;
-			free(reply);
-		}
-		else
-			testerr();
-	}
-
-	/* init cursors */
-	xcb_font_t cursor_font = xcb_generate_id(conn);
-	xcb_open_font(conn, cursor_font, strlen("cursor"), "cursor");
-#define CURSOR(id, XC) cursor[id] = xcb_generate_id(conn); \
-	xcb_create_glyph_cursor(conn, cursor[id], cursor_font, cursor_font, XC, \
-		XC+1, 0, 0, 0, 65535, 63353, 63353);
-	CURSOR(CurNormal, XC_left_ptr);
-	CURSOR(CurResize, XC_sizing);
-	CURSOR(CurMove, XC_fleur);
-#undef CURSOR
-	xcb_close_font(conn, cursor_font);
-	
-	/* init appearance */
-	dc.norm[ColBorder] = getcolor(normbordercolor);
-	dc.norm[ColBG] = getcolor(normbgcolor);
-	dc.norm[ColFG] = getcolor(normfgcolor);
-	dc.sel[ColBorder] = getcolor(selbordercolor);
-	dc.sel[ColBG] = getcolor(selbgcolor);
-	dc.sel[ColFG] = getcolor(selfgcolor);
-	
-	dc.gc = xcb_generate_id(conn);
-	uint32_t values[] = { 1, XCB_LINE_STYLE_SOLID, XCB_CAP_STYLE_BUTT, XCB_JOIN_STYLE_MITER, dc.font.xfont };
-	xcb_create_gc(conn, dc.gc, root, XCB_GC_LINE_WIDTH | XCB_GC_LINE_STYLE | XCB_GC_CAP_STYLE | 
-		XCB_GC_JOIN_STYLE | dc.font.set ? 0 : XCB_GC_FONT, values); 
-	dc.font.set = true;
+	setup_atoms();
 
 	/* init bars */
 	updatebars();
 	updatestatus();
 
 	/* EWMH support per view */
-	xcb_change_property(conn, XCB_PROP_MODE_REPLACE, root, 
-		netatom[NetSupported], XCB_ATOM, 32, NetLast, (unsigned char*)netatom);
+	xcb_atom_t supported[] = { NetSupported, NetWMName, NetWMState, NetWMFullscreen };
+	xcb_change_property(conn, XCB_PROP_MODE_REPLACE, root, NetSupported, XCB_ATOM, 32,
+		sizeof(supported) / sizeof(xcb_atom_t), (unsigned char*) supported);
 
 	/* select for events */
 	uint32_t cw_values[] = 
@@ -1206,8 +1178,10 @@ void setup(void)
 }
 
 void sigchld(int unused) {
-	if(signal(SIGCHLD, sigchld) == SIG_ERR)
+	if(signal(SIGCHLD, sigchld) == SIG_ERR) {
 		die("Can't install SIGCHLD handler");
+	}
+
 	while(0 < waitpid(-1, NULL, WNOHANG));
 }
 
@@ -1239,23 +1213,6 @@ void tagmon(const Arg *arg) {
 	if(!selmon->sel || !mons->next)
 		return;
 	client_send_to_monitor(selmon->sel, dirtomon(arg->i));
-}
-
-int textnw(const char *text, unsigned int len) {
-	// FIXME: Handle character encoding.
-	xcb_char2b_t *text_copy = (xcb_char2b_t*) malloc(len * 2);
-	for(int i = 0; i < len; i++) {
-		text_copy[i].byte2 = text[i];
-	}
-
-	xcb_query_text_extents_cookie_t cookie = xcb_query_text_extents(conn, dc.gc, len, text_copy);
-	xcb_query_text_extents_reply_t *reply = xcb_query_text_extents_reply(conn, cookie, &err);
-		
-	testerr();
-
-	int width = reply->overall_width;
-	free(reply);
-	return width;
 }
 
 void tile(Monitor *m) {
@@ -1459,17 +1416,19 @@ void updatesizehints(Client *c)
 }
 
 void updatetitle(Client *c) {
-	if(!gettextprop(c->win, netatom[NetWMName], c->name, sizeof c->name))
-	{
-		if(!gettextprop(c->win, XCB_ATOM_WM_NAME, c->name, sizeof c->name))
-			strcpy(c->name, broken);	// old broken hack?  why was it like that?
+	if(!gettextprop(c->win, NetWMName, c->name, sizeof c->name)) {
+		if(!gettextprop(c->win, XCB_ATOM_WM_NAME, c->name, sizeof c->name)) {
+			strcpy(c->name, broken);
+		}
 	}
 }
 
 void updatestatus(void) {
-	if(!gettextprop(root, XCB_ATOM_WM_NAME, stext, sizeof(stext)))
+	if(!gettextprop(root, XCB_ATOM_WM_NAME, stext, sizeof(stext))) {
 		strcpy(stext, "dwm-"VERSION);
-	drawbar(selmon);
+	}
+
+	draw_bar(selmon);
 }
 
 void updatewmhints(Client *c) {
@@ -1498,16 +1457,22 @@ void view(const Arg *arg) {
 
 Monitor* wintomon(xcb_window_t w) {
 	int x, y;
-	Client *c;
-	Monitor *m;
-
-	if(w == root && getrootptr(&x, &y))
+	if(w == root && getrootptr(&x, &y)) {
 		return ptrtomon(x, y);
-	for(m = mons; m; m = m->next)
-		if(w == m->barwin)
+	}
+
+	Monitor *m;
+	for(m = mons; m; m = m->next) {
+		if(w == m->barwin) {
 			return m;
-	if((c = client_get_from_window(w)))
+		}
+	}
+
+	Client *c;
+	if((c = client_get_from_window(w))) {
 		return c->mon;
+	}
+
 	return selmon;
 }
 
@@ -1515,12 +1480,18 @@ void zoom(const Arg *arg) {
 	Client *c = selmon->sel;
 
 	if(!selmon->lt[selmon->sellt]->arrange
-	|| selmon->lt[selmon->sellt]->arrange == monocle
-	|| (selmon->sel && selmon->sel->isfloating))
+		|| selmon->lt[selmon->sellt]->arrange == monocle
+		|| (selmon->sel && selmon->sel->isfloating)) {
+
 		return;
-	if(c == client_next_tiled(selmon->clients))
-		if(!c || !(c = client_next_tiled(c->next)))
+	}
+
+	if(c == client_next_tiled(selmon->clients)) {
+		if(!c || !(c = client_next_tiled(c->next))) {
 			return;
+		}
+	}
+
 	client_detach(c);
 	client_attach(c);
 	client_focus(c);
@@ -1536,19 +1507,18 @@ void run(void) {
 	{
 		if(event->response_type == 0)
 		{
-			xcb_generic_error_t *error;
+			xcb_generic_error_t *error = (xcb_generic_error_t*) event;
 
-			error = event;
 			fprintf(stderr, "previous request returned error %i, \"%s\" major code %i, minor code %i resource %i seq number %i\n",
 				(int)error->error_code, xcb_event_get_error_label(error->error_code),
 				(uint32_t) error->major_code, (uint32_t) error->minor_code,
 				(uint32_t) error->resource_id, (uint32_t) error->sequence);
 		} else {
-			for(const handler_func_t* handler = handler_funs; 
-				handler->func != NULL; handler++)
+			for(const handler_func_t* handler = handler_funs; handler->func != NULL; handler++)
 			{
-				if((event->response_type & ~0x80) == handler->request)
+				if((event->response_type & ~0x80) == handler->request) {
 					handler->func(event);
+				}
 			}	
 		}
 
