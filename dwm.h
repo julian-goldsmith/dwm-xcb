@@ -152,7 +152,6 @@ int buttonpress(xcb_generic_event_t *e);
 void checkotherwm(void);
 void cleanup(void);
 void cleanupmon(Monitor *mon);
-void clearevent(int response_type);
 int clientmessage(xcb_generic_event_t *e);
 int configurenotify(xcb_generic_event_t *e);
 int configurerequest(xcb_generic_event_t *e);
@@ -210,6 +209,9 @@ void view(const Arg *arg);
 Monitor *wintomon(xcb_window_t w);
 void zoom(const Arg *arg);
 
+void handle_clear_event(int response_type);
+void handle_event_loop();
+
 extern xcb_connection_t* conn;
 extern xcb_generic_error_t *err;
 extern DC dc;
@@ -218,6 +220,8 @@ extern xcb_window_t root;
 extern int sw, sh;												/* X display screen geometry width, height */
 extern int bh, blw;												/* bar geometry */
 extern char stext[256];
+extern unsigned int numlockmask;
+extern xcb_key_symbols_t *syms;
 
 /* EWMH atoms */
 extern xcb_atom_t NetSupported;

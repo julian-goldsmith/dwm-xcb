@@ -188,8 +188,9 @@ void client_show_hide(Client *c) {
 }
 
 void client_resize(Client *c, int x, int y, int w, int h, bool interact) {
-	if(client_apply_size_hints(c, &x, &y, &w, &h, interact))
+	if(client_apply_size_hints(c, &x, &y, &w, &h, interact)) {
 		client_resize_client(c, x, y, w, h);
+	}
 }
 
 void client_resize_client(Client *c, int x, int y, int w, int h) {
@@ -223,11 +224,15 @@ bool client_is_proto_del(Client *c) {
 	xcb_icccm_get_wm_protocols_reply_t proto_reply;
 
 	if(xcb_icccm_get_wm_protocols_reply(conn, xcb_icccm_get_wm_protocols_unchecked(conn, c->win, WMProtocols), &proto_reply, NULL)) {
-		for(i = 0; !ret && i < proto_reply.atoms_len; i++)
-			if(proto_reply.atoms[i] == WMDelete)
+		for(i = 0; !ret && i < proto_reply.atoms_len; i++) {
+			if(proto_reply.atoms[i] == WMDelete) {
 				ret = true;
+			}
+		}
+
 		xcb_icccm_get_wm_protocols_reply_wipe(&proto_reply);
 	}
+
 	return ret;
 }
 
