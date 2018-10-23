@@ -1,6 +1,6 @@
 # dwm version
 VERSION = 5.8.2
-DEBUG = 1
+DEBUG = 0
 
 # Customize below to fit your system
 

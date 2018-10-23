@@ -283,3 +283,59 @@ Client* client_get_from_window(xcb_window_t w) {
 				return c;
 	return NULL;
 }
+
+void client_update_size_hints(Client *c) {
+	xcb_size_hints_t hints;
+
+	if(xcb_icccm_get_wm_normal_hints_reply(conn, xcb_icccm_get_wm_normal_hints(conn, c->win), &hints, NULL))
+		/* size is uninitialized, ensure that size.flags aren't used */
+		hints.flags = XCB_ICCCM_SIZE_HINT_P_SIZE;
+	if(hints.flags & XCB_ICCCM_SIZE_HINT_BASE_SIZE) {
+		c->basew = hints.base_width;
+		c->baseh = hints.base_height;
+	}
+	else if(hints.flags & XCB_ICCCM_SIZE_HINT_P_MIN_SIZE) {
+		c->basew = hints.min_width;
+		c->baseh = hints.min_height;
+	}
+	else
+		c->basew = c->baseh = 0;
+	if(hints.flags & XCB_ICCCM_SIZE_HINT_P_RESIZE_INC) {
+		c->incw = hints.width_inc;
+		c->inch = hints.height_inc;
+	}
+	else
+		c->incw = c->inch = 0;
+	if(hints.flags & XCB_ICCCM_SIZE_HINT_P_MAX_SIZE) {
+		c->maxw = hints.max_width;
+		c->maxh = hints.max_height;
+	}
+	else
+		c->maxw = c->maxh = 0;
+	if(hints.flags & XCB_ICCCM_SIZE_HINT_P_MIN_SIZE) {
+		c->minw = hints.min_width;
+		c->minh = hints.min_height;
+	}
+	else if(hints.flags & XCB_ICCCM_SIZE_HINT_BASE_SIZE) {
+		c->minw = hints.base_width;
+		c->minh = hints.base_height;
+	}
+	else
+		c->minw = c->minh = 0;
+	if(hints.flags & XCB_ICCCM_SIZE_HINT_P_ASPECT) {
+		c->mina = (float)hints.min_aspect_den / hints.min_aspect_num;
+		c->maxa = (float)hints.max_aspect_num / hints.max_aspect_den;
+	}
+	else
+		c->maxa = c->mina = 0.0;
+	c->isfixed = (c->maxw && c->minw && c->maxh && c->minh
+	             && c->maxw == c->minw && c->maxh == c->minh);
+}
+
+void client_update_title(Client *c) {
+	if(!gettextprop(c->win, NetWMName, c->name, sizeof c->name)) {
+		if(!gettextprop(c->win, XCB_ATOM_WM_NAME, c->name, sizeof c->name)) {
+			strcpy(c->name, "broken");
+		}
+	}
+}

@@ -137,6 +137,8 @@ bool client_is_proto_del(Client *c);
 void client_unmanage(Client *c, bool destroyed);
 void client_send_to_monitor(Client *c, Monitor *m);
 Client *client_get_from_window(xcb_window_t w);
+void client_update_title(Client *c);
+void client_update_size_hints(Client *c);
 
 void draw_init();
 void draw_bars(void);
@@ -201,9 +203,7 @@ bool updategeom(void);
 void updatebarpos(Monitor *m);
 void updatebars(void);
 void updatenumlockmask(void);
-void updatesizehints(Client *c);
 void updatestatus(void);
-void updatetitle(Client *c);
 void updatewmhints(Client *c);
 void view(const Arg *arg);
 Monitor *wintomon(xcb_window_t w);
@@ -267,8 +267,6 @@ extern const char *dmenucmd[];
 extern const char *termcmd[];
 
 extern const Key keys[];
-/* button definitions */
-/* click can be ClkLtSymbol, ClkStatusText, ClkWinTitle, ClkClientWin, or ClkRootWin */
 extern const Button buttons[];
 
 void _testerr(const char* file, const int line);

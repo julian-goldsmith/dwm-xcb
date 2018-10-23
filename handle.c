@@ -192,7 +192,7 @@ int propertynotify(xcb_generic_event_t *e) {
 		}
 		else if(ev->atom == XCB_ATOM_WM_NORMAL_HINTS)
 		{
-			updatesizehints(c);
+			client_update_size_hints(c);
 		}
 		else if(ev->atom == XCB_ATOM_WM_HINTS)
 		{
@@ -200,7 +200,7 @@ int propertynotify(xcb_generic_event_t *e) {
 			draw_bars();
 		}
 		else if(ev->atom == XCB_ATOM_WM_NAME || ev->atom == NetWMName) {
-			updatetitle(c);
+			client_update_title(c);
 
 			if(c == c->mon->sel) {
 				draw_bar(c->mon);
